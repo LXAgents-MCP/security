@@ -1,15 +1,17 @@
 {
-  "name": "@mcagents-mcp/template",
+  "name": "@lxagents-mcp/security",
   "version": "0.1.0",
-  "description": "MCP server and CLI for template",
+  "description": "Read-only MCP server delivering the global security instruction set for python, javascript/typescript, and go.",
   "type": "module",
   "main": "src/index.js",
   "bin": {
-    "template": "src/cli.js",
-    "template-server": "src/index.js"
+    "lxagents-security": "src/cli.js",
+    "lxagents-security-server": "src/index.js"
   },
   "files": [
     "src",
+    "content",
+    "LICENSE",
     "README.md"
   ],
   "scripts": {
@@ -23,9 +25,24 @@
     "node": ">=20"
   },
   "license": "MIT",
+  "author": "LXAgents",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LXAgents-MCP/security.git"
+  },
+  "homepage": "https://github.com/LXAgents-MCP/security#readme",
+  "bugs": {
+    "url": "https://github.com/LXAgents-MCP/security/issues"
+  },
   "keywords": [
     "mcp",
-    "model-context-protocol"
+    "model-context-protocol",
+    "security",
+    "agent-instructions",
+    "lxagents"
   ],
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",

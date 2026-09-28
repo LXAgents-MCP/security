@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { afterEach, test } from "node:test";
+import { test } from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { SERVER_ID, createServer, listTools } from "../src/server.js";
@@ -26,12 +26,12 @@ async function withClient(run) {
   }
 }
 
-const ORIGINAL_API_KEY = process.env.API_KEY;
-
-afterEach(() => {
-  if (ORIGINAL_API_KEY === undefined) delete process.env.API_KEY;
-  else process.env.API_KEY = ORIGINAL_API_KEY;
-});
+/** The text of a single-content tool result. */
+function textOf(result) {
+  assert.notEqual(result.isError, true, "expected a successful result");
+  assert.equal(result.content.length, 1, "expected exactly one content block");
+  return result.content[0].text;
+}
 
 test("the CLI list and the MCP tool list agree", async () => {
   await withClient(async ({ client }) => {
@@ -52,130 +52,169 @@ test("the CLI list and the MCP tool list agree", async () => {
   });
 });
 
-test("the four sample tools are registered", async () => {
+test("security_instruction is the only tool", async () => {
   await withClient(async ({ client }) => {
     const { tools } = await client.listTools();
 
-    assert.deepEqual(tools.map((tool) => tool.name).sort(), [
-      "calculate_sum",
-      "get_secure_summary",
-      "get_server_time",
-      "search_secure_data",
-    ]);
+    assert.deepEqual(tools.map((tool) => tool.name), ["security_instruction"]);
   });
 });
 
-test("tools with a zod schema advertise their parameters", async () => {
+test("security_instruction advertises the path it takes", async () => {
   await withClient(async ({ client }) => {
     const { tools } = await client.listTools();
-    const byName = new Map(tools.map((tool) => [tool.name, tool]));
+    const tool = tools[0];
 
-    const sum = byName.get("calculate_sum").inputSchema;
-    assert.deepEqual(Object.keys(sum.properties).sort(), ["a", "b"]);
-    assert.equal(sum.properties.a.type, "number");
-    assert.deepEqual(sum.required.sort(), ["a", "b"]);
-
-    const search = byName.get("search_secure_data").inputSchema;
-    assert.deepEqual(Object.keys(search.properties), ["query"]);
-    assert.equal(search.properties.query.type, "string");
+    assert.deepEqual(Object.keys(tool.inputSchema.properties), ["path"]);
+    assert.equal(tool.inputSchema.properties.path.type, "string");
+    assert.deepEqual(tool.inputSchema.required, ["path"]);
   });
 });
 
-test("tools without a schema advertise no parameters", async () => {
+test("security_instruction returns a guide from the set", async () => {
   await withClient(async ({ client }) => {
-    const { tools } = await client.listTools();
-    const byName = new Map(tools.map((tool) => [tool.name, tool]));
-
-    for (const name of ["get_server_time", "get_secure_summary"]) {
-      const properties = byName.get(name).inputSchema.properties ?? {};
-      assert.deepEqual(Object.keys(properties), [], `${name} takes no arguments`);
-    }
-  });
-});
-
-test("get_server_time returns a timestamp without an API key", async () => {
-  delete process.env.API_KEY;
-
-  await withClient(async ({ client }) => {
-    const result = await client.callTool({ name: "get_server_time", arguments: {} });
-
-    assert.notEqual(result.isError, true);
-    assert.match(
-      result.content[0].text,
-      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
+    const text = textOf(
+      await client.callTool({
+        name: "security_instruction",
+        arguments: { path: "references/python-flask-web-server-security.md" },
+      })
     );
+
+    // \r? because a checkout on Windows serves CRLF, and the bytes are served
+    // as they are on disk.
+    assert.match(text, /^---\r?\n/, "frontmatter is part of the served text");
+    assert.ok(text.includes("name:"), "frontmatter is not stripped");
   });
 });
 
-test("calculate_sum adds its arguments without an API key", async () => {
-  delete process.env.API_KEY;
-
+test("SKILL.md is reachable and routes to the references", async () => {
   await withClient(async ({ client }) => {
-    const result = await client.callTool({
-      name: "calculate_sum",
-      arguments: { a: 2, b: 40 },
-    });
+    const text = textOf(
+      await client.callTool({
+        name: "security_instruction",
+        arguments: { path: "SKILL.md" },
+      })
+    );
 
-    assert.notEqual(result.isError, true);
-    assert.equal(result.content[0].text, "42");
+    assert.match(text, /references directory/);
   });
 });
 
-test("calculate_sum rejects arguments of the wrong type", async () => {
+test("all ten language and framework guides are served", async () => {
+  const guides = [
+    "golang-general-backend-security.md",
+    "javascript-express-web-server-security.md",
+    "javascript-general-web-frontend-security.md",
+    "javascript-jquery-web-frontend-security.md",
+    "javascript-typescript-nextjs-web-server-security.md",
+    "javascript-typescript-react-web-frontend-security.md",
+    "javascript-typescript-vue-web-frontend-security.md",
+    "python-django-web-server-security.md",
+    "python-fastapi-web-server-security.md",
+    "python-flask-web-server-security.md",
+  ];
+
   await withClient(async ({ client }) => {
-    const result = await client.callTool({
-      name: "calculate_sum",
-      arguments: { a: "two", b: 40 },
-    });
-
-    assert.equal(result.isError, true);
-  });
-});
-
-test("the authenticated tools fail descriptively with no API key", async () => {
-  delete process.env.API_KEY;
-
-  await withClient(async ({ client }) => {
-    for (const [name, args] of [
-      ["get_secure_summary", {}],
-      ["search_secure_data", { query: "anything" }],
-    ]) {
-      const result = await client.callTool({ name, arguments: args });
-
-      assert.equal(result.isError, true, `${name} must fail without a key`);
-      assert.match(result.content[0].text, new RegExp(name));
-      assert.match(result.content[0].text, /API_KEY/);
+    for (const guide of guides) {
+      const text = textOf(
+        await client.callTool({
+          name: "security_instruction",
+          arguments: { path: `references/${guide}` },
+        })
+      );
+      assert.ok(text.length > 1000, `${guide} came back empty or truncated`);
     }
   });
 });
 
-test("the authenticated tools succeed once the API key is set", async () => {
-  process.env.API_KEY = "test-key-not-a-real-secret";
-
+test("a traversal attempt reports not found and leaks nothing", async () => {
   await withClient(async ({ client }) => {
-    const summary = await client.callTool({ name: "get_secure_summary", arguments: {} });
-    assert.notEqual(summary.isError, true);
-    assert.match(summary.content[0].text, /Authenticated/);
+    for (const path of [
+      "../../package.json",
+      "../../../.git/config",
+      "references/../../package.json",
+      "/etc/passwd",
+      "C:\\Windows\\System32\\drivers\\etc\\hosts",
+    ]) {
+      const text = textOf(
+        await client.callTool({ name: "security_instruction", arguments: { path } })
+      );
 
-    const search = await client.callTool({
-      name: "search_secure_data",
-      arguments: { query: "widgets" },
-    });
-    assert.notEqual(search.isError, true);
-    assert.match(search.content[0].text, /widgets/);
+      assert.match(text, /^not found:/, `${path} must be refused`);
+      assert.doesNotMatch(text, /"name":/, `${path} must leak nothing`);
+      assert.doesNotMatch(text, /\[core\]/, `${path} must leak nothing`);
+    }
   });
 });
 
-test("the API key is never echoed back to the caller", async () => {
-  process.env.API_KEY = "test-key-not-a-real-secret";
+test("an unknown path inside the set reports not found", async () => {
+  await withClient(async ({ client }) => {
+    const text = textOf(
+      await client.callTool({
+        name: "security_instruction",
+        arguments: { path: "references/rust-axum-web-server-security.md" },
+      })
+    );
+
+    assert.match(text, /^not found: references\/rust-axum-web-server-security\.md/);
+  });
+});
+
+test("the set root itself is not a file", async () => {
+  await withClient(async ({ client }) => {
+    const text = textOf(
+      await client.callTool({ name: "security_instruction", arguments: { path: "." } })
+    );
+
+    assert.match(text, /^not found:/);
+  });
+});
+
+test("no tool accepts a write verb", async () => {
+  await withClient(async ({ client }) => {
+    const { tools } = await client.listTools();
+
+    for (const tool of tools) {
+      const properties = Object.keys(tool.inputSchema.properties ?? {});
+      for (const name of ["action", "verb", "operation", "command", "body", "content"]) {
+        assert.equal(
+          properties.includes(name),
+          false,
+          `${tool.name} must not accept ${name}`
+        );
+      }
+    }
+  });
+});
+
+test("no tool accepts a credential", async () => {
+  await withClient(async ({ client }) => {
+    const { tools } = await client.listTools();
+
+    for (const tool of tools) {
+      const properties = Object.keys(tool.inputSchema.properties ?? {});
+      for (const name of ["apiKey", "api_key", "token", "secret", "password"]) {
+        assert.equal(
+          properties.includes(name),
+          false,
+          `${tool.name} must not accept ${name}`
+        );
+      }
+    }
+  });
+});
+
+test("the server reads no credential and needs no key to answer", async () => {
+  delete process.env.API_KEY;
 
   await withClient(async ({ client }) => {
-    for (const [name, args] of [
-      ["get_secure_summary", {}],
-      ["search_secure_data", { query: "widgets" }],
-    ]) {
-      const result = await client.callTool({ name, arguments: args });
-      assert.doesNotMatch(JSON.stringify(result), /test-key-not-a-real-secret/);
-    }
+    const text = textOf(
+      await client.callTool({
+        name: "security_instruction",
+        arguments: { path: "references/golang-general-backend-security.md" },
+      })
+    );
+
+    assert.ok(text.length > 1000, "the set is served without a key");
   });
 });
