@@ -1,24 +1,31 @@
-# template
+# lxagents-security
 
-MCP server and CLI for template.
+The global security instruction set, served read-only over MCP.
 
 - **Organization:** `LXAgents-MCP`
-- **Repository:** `template`
-- **Server ID:** `template`
-- **Package:** `@mcagents-mcp/template`
-- **Dual-purpose:** a CLI (`template`) and an MCP server (`template-server`).
+- **Repository:** `security`
+- **Server ID:** `lxagents-security`
+- **Package:** `@lxagents-mcp/security`
+- **Dual-purpose:** a CLI (`lxagents-security`) and an MCP server
+  (`lxagents-security-server`).
 
-One implementation behind two surfaces, so a result produced through the CLI is
-identical to the same result produced through an MCP client. Node.js 20+, ESM, no build
-step.
+The set covers **Python**, **JavaScript/TypeScript**, and **Go** — the language and
+framework guides for writing secure code and reviewing code that is already written.
+One implementation behind two surfaces, so a result produced through the CLI is identical
+to the same result produced through an MCP client. Node.js 20+, ESM, no build step.
 
-## Features
+## The one tool
 
-- MCP server over **stdio** and **streamable HTTP**, with a `/healthz` endpoint.
-- A CLI with `help`, `version`, `tools`, and `serve`.
-- One file per tool under `src/tools/`, with optional [zod](https://zod.dev) parameters
-  and an optional server-wide API key.
-- A test suite that pins the CLI and the MCP server to the same tool list.
+| Tool | Parameters | Returns |
+|---|---|---|
+| `security_instruction` | `path` (string) | One file from `content/`, verbatim |
+
+Read `SKILL.md` first. It names the language-and-framework workflow and routes to the ten
+reference files under `references/`.
+
+There is no write path. No tool accepts a verb, no tool takes a credential, and no tool
+reaches a network. The code that would write is absent rather than disabled, so pointing a
+repository at this server cannot mutate the set.
 
 ## Quick start
 
@@ -29,26 +36,37 @@ npm run cli -- tools
 npm start
 ```
 
-Tools that require authentication read one key for the whole server:
+No key, no environment variable, no configuration. The server starts and answers with
+nothing set.
 
-```bash
-export API_KEY="your-key-here"
+## The set
+
+```
+content/
+  SKILL.md                        the workflow, and the router into references/
+  LICENSE.txt                     Apache-2.0, from the upstream package
+  references/
+    golang-general-backend-security.md
+    javascript-express-web-server-security.md
+    javascript-general-web-frontend-security.md
+    javascript-jquery-web-frontend-security.md
+    javascript-typescript-nextjs-web-server-security.md
+    javascript-typescript-react-web-frontend-security.md
+    javascript-typescript-vue-web-frontend-security.md
+    python-django-web-server-security.md
+    python-fastapi-web-server-security.md
+    python-flask-web-server-security.md
 ```
 
-Leave it unset and everything still starts — only calling an authenticated tool fails.
+## Register it
 
-## Sample tools
+| Transport | How |
+|---|---|
+| Local stdio | `command: node`, `args: ["src/index.js"]`, `cwd:` this checkout |
+| Local HTTP | `npm run start:http`, then `http://localhost:3000/mcp` |
+| Remote | Settings → Connectors → Add custom connector → `https://<host>/mcp` |
 
-Four tools ship with this template to demonstrate the four combinations of *takes
-parameters* and *requires an API key*. **They are deleted when a real project is
-scaffolded from it.**
-
-| Tool | Parameters | API key |
-|---|---|---|
-| `get_server_time` | none | no |
-| `get_secure_summary` | none | yes |
-| `calculate_sum` | `a`, `b` | no |
-| `search_secure_data` | `query` | yes |
+The `/mcp` path is not optional on either HTTP form.
 
 ## Documentation
 
@@ -61,10 +79,12 @@ scaffolded from it.**
 
 Full map: [`.agents/index/project-wiki-index.md`](.agents/index/project-wiki-index.md).
 
-## Scaffolding a new project
+## Sibling servers
 
-This repository is a template. To turn it into a real project, follow
-[`PROMPT.md`](PROMPT.md).
+This is one of four. `lxagents-agents-base` carries the org-wide conventions every
+repository resolves; `RBAgents-MCP/shared-instruction` carries Roblox development; and
+`RBAgents-MCP/security` carries Roblox security, which is a different threat model and is
+not covered here.
 
 ## Working with agents
 
@@ -74,4 +94,8 @@ are not stored in this repository.
 
 ## License
 
-MIT — see [`LICENSE`](LICENSE).
+MIT for the server — see [`LICENSE`](LICENSE).
+
+The material under `content/` is Apache-2.0, redistributed from the upstream
+`security-best-practices` package with its licence text intact — see
+[`content/LICENSE.txt`](content/LICENSE.txt).

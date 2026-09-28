@@ -1,6 +1,6 @@
 ---
 name: memory-index
-description: Index of .agents/memory/ - repository state, decisions, and task records. Read every session so work continues rather than restarts.
+description: Index of .agents/memory/ - repository state and decisions. Read every session so work continues rather than restarts.
 ---
 
 # Memory Index
@@ -23,12 +23,6 @@ current request.
 | File | Purpose |
 |---|---|
 | [`../memory/decisions/harness-branch-naming.md`](../memory/decisions/harness-branch-naming.md) | Why a harness-designated branch never overrides the branching strategy. |
-
-## Tasks
-
-| File | Purpose |
-|---|---|
-| [`../memory/tasks/mcp-tools-refactor.md`](../memory/tasks/mcp-tools-refactor.md) | Adopting the shared instruction set and refactoring the tool layer onto per-file modules. |
 
 ## Maintenance
 
