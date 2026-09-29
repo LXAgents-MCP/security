@@ -62,7 +62,7 @@ with and no filesystem I/O on the read path. Containment is a property of the
 
 ## Requirements
 
-Node.js 20 or newer. One dependency (`@modelcontextprotocol/sdk`), and **no build step** —
+Node.js 20 or newer. Two dependencies (`@modelcontextprotocol/sdk` and `zod`), and **no build step** —
 the package ships source and Node runs it directly.
 
 ## Related pages

@@ -19,7 +19,7 @@ npm install
 npm test
 ```
 
-One dependency: `@modelcontextprotocol/sdk`.
+Two dependencies: `@modelcontextprotocol/sdk` and `zod`.
 
 There is also a container image, for a host that cannot run Node at all — see
 [`docker.md`](docker.md). It is not built by `npm test` and has never been built.
