@@ -21,6 +21,9 @@ npm test
 
 Two dependencies: `@modelcontextprotocol/sdk` and `zod`.
 
+There is also a container image, for a host that cannot run Node at all — see
+[`docker.md`](docker.md). It is not built by `npm test` and has never been built.
+
 ## No authentication
 
 Nothing here reaches an external service, so there is no key. The server starts, lists
@@ -152,6 +155,7 @@ A `console.log` on the server path is a bug that corrupts the protocol stream.
 ## Related pages
 
 - [`env.md`](env.md) — every environment variable this project reads
+- [`docker.md`](docker.md) — building and running the container image
 - [`../information/overview.md`](../information/overview.md) — what this project is
 - [`../information/architecture.md`](../information/architecture.md) — how the pieces fit
 - [`README.md`](../../README.md)

@@ -23,6 +23,8 @@ step** - the published package ships `src/` and Node runs it directly.
 ```
 AGENTS.md                     entry point, connector bootstrap, trigger table
 package.json                  both bins, no build step
+Dockerfile                    container image; MCP_TRANSPORT=http, node src/index.js
+.dockerignore                 what the build context must not carry
 content/                      the published security set - the product
   SKILL.md                    the workflow, and the router into references/
   LICENSE.txt                 Apache-2.0, from the upstream package

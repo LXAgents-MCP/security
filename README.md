@@ -89,6 +89,7 @@ The `/mcp` path is not optional on either HTTP form.
 - [`wiki/environments/setup.md`](wiki/environments/setup.md) — installing and running
   both modes.
 - [`wiki/environments/env.md`](wiki/environments/env.md) — environment variables.
+- [`wiki/environments/docker.md`](wiki/environments/docker.md) — the container image.
 
 Full map: [`.agents/index/project-wiki-index.md`](.agents/index/project-wiki-index.md).
 
