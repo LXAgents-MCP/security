@@ -1,20 +1,20 @@
 ---
 name: memory-state-repository-state
-description: Current known state of lxagents-security - what exists after the template was turned into the global security set, and the next obvious step.
+description: Current known state of lxagents-security - the derived per-file tool surface, the read-only set, the stack, and what is not built.
 ---
 
 # Repository State
 
 ## What this repository is right now
 
-`lxagents-security` is a working dual-purpose MCP server and CLI at version `0.1.0`. It
+`lxagents-security` is a working dual-purpose MCP server and CLI at version `1.0.0`. It
 serves the **global security set** read-only. It is no longer a template: `PROMPT.md` and
-`template-mode.md` are gone, and `src/tools/` holds one real tool.
+`template-mode.md` are gone, and the tool surface is derived from the set.
 
 ## Stack
 
-Node.js 20+, ESM, no build step. Two runtime dependencies:
-`@modelcontextprotocol/sdk` and `zod`. Tests are `node --test`, no framework.
+Node.js 20+, ESM, no build step. One runtime dependency:
+`@modelcontextprotocol/sdk`. Tests are `node --test`, no framework.
 
 ## What exists
 
@@ -23,13 +23,16 @@ Node.js 20+, ESM, no build step. Two runtime dependencies:
   `<language>-<framework>-<stack>-security.md` across Python, JavaScript/TypeScript, and
   Go. Copied verbatim from the workspace `.agents/security/security-best-practices/`
   package, frontmatter intact.
-* **Tool layer.** `src/tools/security-instruction.js` — reads one file from `content/`
-  by path. `src/server.js` registers it through `TOOL_MODULES`, which is the whole
-  surface.
-* **Traversal defence.** `src/content.js` rejects a `..` segment before any filesystem
-  call, then confirms containment. The second check is redundant on purpose.
-  `test/http.test.js` repeats the hostile-path check over a real socket and adds the
-  three a container makes reachable and a host checkout does not.
+* **A derived tool surface.** `src/tools/from-content.js` walks `content/` once at
+  import and builds one tool per `.md` file, named after its own filename — eleven
+  tools, `skill` plus the ten reference guides. `src/server.js` registers the frozen
+  array as `TOOL_MODULES`, which is the whole surface. There is no hand-written tool in
+  this repository.
+* **No argument anywhere.** Every tool returns one file verbatim with its frontmatter
+  intact. A call is a map lookup over text read once at boot: no filesystem I/O on the
+  read path, and no path for a caller to traverse with. `src/content.js` and its `..`
+  guard were deleted with the argument they guarded — see
+  [`../tasks/per-file-tools.md`](../tasks/per-file-tools.md).
 * **Read-only, structurally.** No tool accepts a verb, takes a credential, or opens a
   socket. The code that would write is absent rather than disabled.
 * **A configured HTTP transport.** `POST /mcp` is still Streamable HTTP, the only HTTP
@@ -44,7 +47,8 @@ Node.js 20+, ESM, no build step. Two runtime dependencies:
   the `lxagents-agents-base` connector. Local rules: `repository`, `tool-authoring`,
   `secrets`. No overrides.
 * **Documentation.** `wiki/information/` and `wiki/environments/`, updated in the same
-  commit as the code they describe, plus the first changelog at `wiki/logs/0/1/0/`.
+  commit as the code they describe, plus changelogs at `wiki/logs/0/1/0/` and
+  `wiki/logs/1/0/0/`.
 
 ## What is not built
 
@@ -54,9 +58,11 @@ Node.js 20+, ESM, no build step. Two runtime dependencies:
   and the allow-list is off unless the operator sets it.
 * No CI workflow, no linter, no formatter.
 * `content/` is a copy. A change to the set belongs upstream in the workspace set first;
-  this repository is a delivery surface for it, not its editor.
-* The version is still `0.1.0` from the template and has not been bumped — that needs
-  the owner.
+  this repository is a delivery surface for it, not its editor. One consequence is on
+  record: `SKILL.md` does not enumerate the ten reference filenames, only their two
+  documented shapes, so nothing here can make it do so.
+* `content/LICENSE.txt` is no longer served. It never was an instruction, but the old
+  path-taking tool would return it on request and the new surface does not.
 
 ## Shared set
 
@@ -74,5 +80,11 @@ material in `content/`.
 
 ## Next obvious step
 
-Add CI that runs `npm test` on push. The suite is the only thing holding the two
-surfaces and the traversal defence together, and nothing runs it automatically.
+Add CI that runs `npm test` on push. The suite is the only thing holding the two surfaces
+and the file-to-tool bijection together, and nothing runs it automatically.
+
+Note that `test/http.test.js` is timing-sensitive under a full parallel run on a slow
+or network filesystem: it spawns a child server per test and waits on a startup line. One
+startup-line assertion failed once out of five full-suite runs on WSL `/mnt/c` and passed
+every time the file was run alone. Suspect the harness, not the server, before suspecting
+a change.

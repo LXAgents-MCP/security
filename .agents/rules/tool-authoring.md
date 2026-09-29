@@ -1,114 +1,101 @@
 ---
 name: tool-authoring
-description: The contract for adding a tool - one file per tool under src/tools/, the config and handler exports, zod schemas, and registration.
+description: How a tool comes to exist - the surface is derived from content/, so adding a markdown file to the set is the whole procedure.
 ---
 
 # Tool Authoring
 
-One tool is one file. This is what keeps the tool layer reviewable and stops
-`src/server.js` growing into the array this layer replaced.
+**Adding a markdown file to `content/` is adding a tool.** There is no tool file to
+write, no import to add, and no entry to put in an array.
+
+The surface is built at boot by `src/tools/from-content.js`, which walks `CONTENT_DIR`
+once and makes one tool per `.md` file it finds. A contributor who follows the older
+text in this file — write `src/tools/{name}.js`, import it, add it to `TOOL_MODULES` —
+would hand-write a module for a guide that already has a tool, and put two tools for one
+file on the surface.
+
+## The derivation
+
+A tool's name comes from its own filename:
+
+1. take the basename, dropping the folder;
+2. drop `.md`;
+3. lowercase;
+4. `-` → `_`.
+
+| File | Tool |
+|---|---|
+| `SKILL.md` | `skill` |
+| `references/python-flask-web-server-security.md` | `python_flask_web_server_security` |
+
+So the folder is dropped, and the ten reference guides get long names. That is the honest
+consequence of naming a tool after the guide it serves rather than after its folder — a
+caller reading the tool list can tell what each one is without opening anything.
+
+`NAME_OVERRIDES` in `src/tools/from-content.js` is the escape hatch, for a filename that
+derives a name saying nothing useful. **This repository has no overrides.** Adding one is
+a naming decision, and it belongs to the owner, not to whoever happened to add the file.
 
 ## The surface is read-only
 
-This server has one tool and it is a read. Do not add a tool that takes a verb, a
-credential, or a network call.
+Every tool is a read, and every tool takes **no argument at all**. Do not add a tool that
+takes an argument, a verb, a credential, or a network call.
 
 The property is **structural**: the code that would write is absent, not disabled behind
 a check. That is stronger than a permission check on a general-purpose tool, and it is
 what a consuming repository depends on when it points at this server — it cannot mutate
 the set, because there is nothing here that mutates anything.
 
-Adding a second read is fine. `mcp_list` on the sibling instruction server is the same
-shape.
+Not taking an argument is not a weaker version of the old check; it is the check. There
+is no `path` to traverse with, so there is no traversal defence to keep correct.
 
-## File shape
+## What the generator requires of a file
 
-A tool lives at `src/tools/{tool_name}.js`, where `{tool_name}` is the registered tool
-name character for character. It exports two things and a default that pairs them:
+Three things fail the process at boot rather than the first caller, because a set that
+cannot be routed on should not start:
 
-```js
-import { z } from "zod";
+* **A `description:` in the frontmatter.** It is the tool description, and it is what a
+  caller routes on. A file without one publishes a tool nobody can choose.
+* **A filename that derives a valid MCP tool name** — `^[a-z][a-z0-9_]{0,63}$`. A name
+  starting with a digit or holding a character the client will not accept is a startup
+  error naming the file and the fix.
+* **A filename no other file derives.** Two files deriving one name would silently shadow
+  each other, so the second is a startup error naming both.
 
-export const config = {
-  name: "security_instruction",
-  description: "Read one security guide from the global security set by path, e.g. 'SKILL.md'. Read-only - this tool cannot write.",
-  schema: {
-    path: z.string().describe("Path inside the set, e.g. 'references/python-flask-web-server-security.md'. Never a leading slash, never '..'."),
-  },
-};
+Frontmatter is read by a small hand-rolled parser, not a YAML dependency: single-line
+scalar fields only. A folded or multi-line value is not read, and a `description:` it
+misses shows up as the missing-description error rather than an empty tool description.
+Write `description:` on one line.
 
-export async function handler({ path }) {
-  const text = await readSetFile(path);
-  if (text === null) {
-    return { content: [{ type: "text", text: `not found: ${path}` }] };
-  }
-  return { content: [{ type: "text", text }] };
-}
+## Editing the set
 
-export default { config, handler };
-```
+`content/` is a copy of an upstream workspace set. It is served verbatim, with its
+frontmatter intact, on the next boot — there is no draft space inside it. A change to a
+guide belongs upstream and is copied here; see [`repository.md`](repository.md).
 
-| Export | Required | What it is |
-|---|---|---|
-| `config.name` | yes | The registered tool name. Matches the filename. |
-| `config.description` | yes | One line an agent can route on without calling the tool. |
-| `config.schema` | no | A **zod raw shape** - a plain object of zod validators. Omit it entirely for a tool that takes no arguments. |
-| `handler` | yes | `async (args) => ({ content: [...] })`. Receives the parsed arguments when a schema is declared, and nothing useful when it is not. |
-| default | yes | `{ config, handler }`, so `src/server.js` imports one binding per tool. |
-
-## The schema is a raw shape, not a z.object
-
-`server.tool(name, description, schema, handler)` expects a `ZodRawShape`. Pass
-`{ a: z.number() }`, never `z.object({ a: z.number() })` - wrapping it produces a tool
-whose input schema has no properties and whose handler receives nothing.
-
-Describe every field with `.describe()`. That text is what reaches the calling model as
-the parameter's documentation; without it the caller is guessing.
-
-## Registration
-
-`src/server.js` imports each tool module individually and registers it:
-
-```js
-server.tool(config.name, config.description, config.schema, handler);
-```
-
-A tool with no `config.schema` is registered with the three-argument form instead. Both
-forms are in `src/server.js` already - follow whichever matches the tool.
-
-Adding a tool means two edits and nothing else: the new file, and its import plus its
-entry in the `TOOL_MODULES` array. Do not add a registration path that bypasses that
-array; `listTools()` and the CLI read it, and a tool registered outside it is invisible
-to both.
-
-## Authentication
-
-No tool in this repository needs a credential. If one ever did, it checks **inside the
-handler** — see [`secrets.md`](secrets.md). Never at module scope, and never as a
-condition on whether the tool is registered.
-
-## Paths into `content/`
-
-A tool that reads from the set goes through `readSetFile` in `src/content.js`. Do not call
-`fs` directly from a handler: the traversal defence lives in that one place, and a
-second path to the filesystem is a second thing to get right.
-
-Return `not found` as ordinary content for an unknown path. That is a lookup miss, not a
-server fault, and a thrown error would be indistinguishable from a real failure.
+A file that must **not** be served still has to be a `.md` file to be skipped, so nothing
+under `content/` can opt out by other means. `LICENSE.txt` is unserved because it is not
+markdown. That is the whole mechanism, and it is why the licence is a `.txt`.
 
 ## Errors
 
-Throw a plain `Error` with a message that says what was missing and what to do about
-it. The MCP SDK turns a thrown error into an error result for the caller, so there is
-no need to hand-build one.
-
-Do not return an error as ordinary text content. A caller cannot tell that apart from a
-successful answer.
+A malformed set throws a plain `Error` naming the file and what to do about it, at
+import. There is no runtime error path to design for: by the time a call arrives, the set
+has already been validated and read.
 
 ## Tests
 
-Every tool gets coverage in `test/server.test.js`:
+`test/server.test.js` owns the surface, and it is written to fail if the derivation is
+broken:
 
-* it appears in `listTools()` and in the client's `tools/list`;
-* a tool with a schema has its parameters present in the advertised input schema;
-* a tool that requires the API key fails without it and succeeds with it.
+* every `.md` under `content/` has exactly one tool, and every tool maps back to one
+  file — the bijection, in both directions, so a guide added and never surfaced is caught
+  as loudly as a tool serving a file that is gone;
+* every name matches the derivation, and is a valid MCP tool name;
+* no tool declares an input schema, so no tool takes an argument;
+* every tool returns its own file byte for byte, frontmatter included;
+* the total served text equals the total text on disk;
+* `LICENSE.txt` is not served.
+
+**If a change to `src/server.js` or `src/tools/from-content.js` makes any of those true
+of a new tool, the test that should catch it does not exist yet — write it.**

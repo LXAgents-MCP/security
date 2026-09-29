@@ -19,7 +19,7 @@ npm install
 npm test
 ```
 
-Two dependencies: `@modelcontextprotocol/sdk` and `zod`.
+One dependency: `@modelcontextprotocol/sdk`.
 
 There is also a container image, for a host that cannot run Node at all — see
 [`docker.md`](docker.md). It is not built by `npm test` and has never been built.
@@ -27,7 +27,7 @@ There is also a container image, for a host that cannot run Node at all — see
 ## No authentication
 
 Nothing here reaches an external service, so there is no key. The server starts, lists
-its tool, and answers every request with nothing configured.
+its eleven tools, and answers every request with nothing configured.
 
 There are four optional environment variables — `MCP_TRANSPORT`, `PORT`, `HOST`, and
 `MCP_ALLOWED_HOSTS` — and none of them is required. `MCP_ALLOWED_HOSTS` is a `Host`
@@ -66,8 +66,14 @@ lxagents-security tools
 `tools` prints every registered tool with its description:
 
 ```text
-security_instruction  Read one security guide from the global security set by path, e.g. …
+golang_general_backend_security                    Go (Golang) Security Spec (Go 1.25.x, Standard Library, net/http) — …
+javascript_express_web_server_security             Express (Node.js) Web Security Spec (Express 5.x / 4.19.2+, Node.js LTS) — …
+…
+skill                                              Perform language and framework specific security best-practice reviews …
 ```
+
+One line per file in `content/`, named after that file. Eleven lines today; one more
+whichever guide is added to the set next.
 
 The list comes from `listTools()` in `src/server.js` — the same list the MCP server
 registers — so the two surfaces cannot disagree.
