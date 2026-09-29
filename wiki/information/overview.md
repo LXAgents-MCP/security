@@ -47,9 +47,12 @@ if the first is ever weakened, the boundary still holds.
 * A CLI with `help`, `version`, `tools`, and `serve`.
 * A tool layer where each tool is its own file under `src/tools/`, declaring optional
   parameters with [zod](https://zod.dev).
-* A test suite covering registration, the advertised schema, all ten reference files, five
-  traversal attempts that must report `not found` and leak nothing, and the structural
-  claim that no tool takes a verb or a credential.
+* A `Host` allow-list for the HTTP transport that is **off unless it is set**, and says
+  so on startup when it is off.
+* A test suite covering registration, the advertised schema, all ten reference files, the
+  traversal attempts that must report `not found` and leak nothing, the structural claim
+  that no tool takes a verb or a credential, and — over a real socket — the route table,
+  tool parity, concurrent requests, the `Host` allow-list, and what a shutdown does.
 
 ## Requirements
 

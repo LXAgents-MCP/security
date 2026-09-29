@@ -23,9 +23,14 @@ Two dependencies: `@modelcontextprotocol/sdk` and `zod`.
 
 ## No authentication
 
-Nothing here reaches an external service, so there is no key to set and no environment
-variable to configure. The server starts, lists its tool, and answers every request with
-nothing configured. Full list of variables: [`env.md`](env.md).
+Nothing here reaches an external service, so there is no key. The server starts, lists
+its tool, and answers every request with nothing configured.
+
+There are four optional environment variables — `MCP_TRANSPORT`, `PORT`, `HOST`, and
+`MCP_ALLOWED_HOSTS` — and none of them is required. `MCP_ALLOWED_HOSTS` is a `Host`
+allow-list for the HTTP transport and is **off unless you set it**; the server says so
+on startup. Set it before exposing the port anywhere but your own machine. Full list:
+[`env.md`](env.md).
 
 ## CLI mode
 
@@ -118,6 +123,9 @@ lxagents-security serve --stdio
 npm run start:http
 lxagents-security serve --http --port 3000
 ```
+
+`HOST` has no flag — set it in the environment, for example
+`HOST=127.0.0.1 npm run start:http` to keep the port off every interface.
 
 Check it is up:
 

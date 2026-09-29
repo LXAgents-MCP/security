@@ -60,8 +60,11 @@ wiki/                         human documentation
 | `MCP_TRANSPORT` | `src/index.js` | `stdio` (default) or `http` (Streamable HTTP on `/mcp`). |
 | `PORT` | `src/index.js` | HTTP port, default `3000`. |
 | `HOST` | `src/index.js` | Interface the HTTP transport binds, default `0.0.0.0` — every IPv4 interface. |
+| `MCP_ALLOWED_HOSTS` | `src/index.js` | Comma-separated `Host` allow-list for the HTTP transport. **Unset means none is applied**; the server says so on startup. |
 
-There is no `API_KEY`. Nothing here reaches an external service.
+There is no `API_KEY`. Nothing here reaches an external service. `MCP_ALLOWED_HOSTS` is
+a filter, not a credential — it decides which `Host` values are answered, not who is
+asking.
 
 ## The two surfaces
 
@@ -83,6 +86,11 @@ suite.
 * **A fresh `McpServer` per HTTP request.** `src/index.js` builds and closes one per
   request because `McpServer` holds per-connection state. Do not hoist it to module
   scope.
+* **An unset `MCP_ALLOWED_HOSTS` is the guard being off.** Not "allow nothing". The
+  startup line says `MCP_ALLOWED_HOSTS is unset` when there is no list, and `HOST`
+  defaults to `0.0.0.0`, so the unguarded state is the default one. Do not "fix" this by
+  refusing everything when the variable is empty — a paste that lost its value would
+  take the server down with a 403 on every request.
 * **`content/` is the product, not a source folder.** Every file in it is served
   verbatim on the next boot, with its frontmatter intact. `src/` is local; a change to
   `content/` changes what every consuming repository reads.

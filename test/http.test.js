@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { createServer as createNetServer } from "node:http";
+import { createServer as createNetServer, request } from "node:http";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { after, test } from "node:test";
@@ -430,3 +430,109 @@ test(
     });
   }
 );
+
+/**
+ * A request with a `Host` header of our choosing.
+ *
+ * `fetch` cannot do this. `Host` is a forbidden header name in the fetch spec, and a
+ * client that silently drops it sends the loopback name every time - so a test written
+ * with `fetch` would exercise the allow-list and conclude whatever the real control
+ * does, which is the worst way to test a security control.
+ *
+ * @param {{ url: string, host: string, path?: string }} options
+ * @returns {Promise<{ status: number, body: string }>}
+ */
+function requestWithHost({ url, host, path = "/healthz" }) {
+  const target = new URL(path, url);
+
+  return new Promise((resolveRequest, rejectRequest) => {
+    const req = request(
+      {
+        host: target.hostname,
+        port: target.port,
+        path: target.pathname,
+        method: "GET",
+        headers: { Host: host },
+      },
+      (res) => {
+        let body = "";
+        res.setEncoding("utf8");
+        res.on("data", (chunk) => {
+          body += chunk;
+        });
+        res.on("end", () => resolveRequest({ status: res.statusCode, body }));
+      }
+    );
+
+    req.on("error", rejectRequest);
+    req.end();
+  });
+}
+
+test("with no allow-list set, nothing is refused", async () => {
+  await withServer({}, async ({ url }) => {
+    // The default, and the one the plan calls the safe-looking-unsafe one. It is
+    // asserted explicitly so that a future change to refuse-by-default has to
+    // contradict a test rather than pass quietly.
+    for (const host of ["example.test", "evil.test", "127.0.0.1"]) {
+      const { status } = await requestWithHost({ url, host });
+      assert.equal(status, 200, `${host} must be served when no allow-list is set`);
+    }
+  });
+});
+
+test("the startup line announces that no allow-list is applied", async () => {
+  await withServer({}, async ({ output }) => {
+    assert.match(output(), /MCP_ALLOWED_HOSTS is unset, so no Host header allow-list is applied/);
+  });
+});
+
+test("the allow-list is applied when MCP_ALLOWED_HOSTS is set", async () => {
+  const allowed = "security.example.test, other.example.test";
+
+  await withServer({ env: { MCP_ALLOWED_HOSTS: allowed } }, async ({ url, port }) => {
+    assert.equal((await requestWithHost({ url, host: "security.example.test" })).status, 200);
+    assert.equal((await requestWithHost({ url, host: "other.example.test" })).status, 200);
+
+    // The refusal, and its shape: a 403 carrying a JSON-RPC error, not a 404 and not
+    // a dropped connection.
+    const refused = await requestWithHost({ url, host: "evil.test" });
+    assert.equal(refused.status, 403);
+    assert.match(JSON.parse(refused.body).error.message, /Invalid Host: evil\.test/);
+
+    // The port is not part of the match. A client that reaches the server through a
+    // proxy sends `host:port`, and an allow-list that matched the whole header would
+    // refuse it while looking correct in a test that used the bare name.
+    assert.equal(
+      (await requestWithHost({ url, host: `security.example.test:${port}` })).status,
+      200
+    );
+  });
+});
+
+test("the allow-list guards the health check too", async () => {
+  // Otherwise a deployment could watch its own server through /healthz while every
+  // real caller was refused - a green check on a service nothing can reach.
+  await withServer({ env: { MCP_ALLOWED_HOSTS: "security.example.test" } }, async ({ url }) => {
+    assert.equal((await requestWithHost({ url, host: "evil.test" })).status, 403);
+    assert.equal((await requestWithHost({ url, host: "security.example.test" })).status, 200);
+  });
+});
+
+test("setting MCP_ALLOWED_HOSTS silences the warning, so neither can pass by accident", async () => {
+  await withServer({ env: { MCP_ALLOWED_HOSTS: "security.example.test" } }, async ({ output }) => {
+    assert.doesNotMatch(output(), /MCP_ALLOWED_HOSTS is unset/);
+    // The list that is applied is the one that was set, not a fallback.
+    assert.doesNotMatch(output(), /no Host header allow-list is applied/);
+  });
+});
+
+test("an allow-list of nothing but separators still counts as unset", async () => {
+  // `MCP_ALLOWED_HOSTS=` is a shell that lost the value, and `MCP_ALLOWED_HOSTS= , ,`
+  // is a paste that did. Treating either as "allow nothing" would refuse every request
+  // with a message that names no host at all.
+  await withServer({ env: { MCP_ALLOWED_HOSTS: " , , " } }, async ({ url, output }) => {
+    assert.equal((await requestWithHost({ url, host: "anything.test" })).status, 200);
+    assert.match(output(), /MCP_ALLOWED_HOSTS is unset/);
+  });
+});

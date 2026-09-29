@@ -40,6 +40,7 @@ of scope. This record supersedes the plan folder's own naming, which still says 
 |---|---|---|---|
 | Baseline, before any change | 12 | 12 | 0 |
 | After the host binding and the socket suite | 23 | 23 | 0 |
+| After the `Host` allow-list | 29 | 29 | 0 |
 
 The suite runs on Node 20+ with `node --test` and no framework. The socket tests start
 `src/index.js` as a real child process, because an imported module cannot be given a
