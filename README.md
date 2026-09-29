@@ -14,18 +14,35 @@ framework guides for writing secure code and reviewing code that is already writ
 One implementation behind two surfaces, so a result produced through the CLI is identical
 to the same result produced through an MCP client. Node.js 20+, ESM, no build step.
 
-## The one tool
+## The tools
 
-| Tool | Parameters | Returns |
-|---|---|---|
-| `security_instruction` | `path` (string) | One file from `content/`, verbatim |
+One tool per file in the set — 11 of them, named after the file each one serves, and none
+of them takes an argument.
 
-Read `SKILL.md` first. It names the language-and-framework workflow and routes to the ten
-reference files under `references/`.
+| Tool | Returns |
+|---|---|
+| `skill` | `SKILL.md`, the workflow and the router |
+| `golang_general_backend_security` | `references/golang-general-backend-security.md` |
+| `javascript_express_web_server_security` | `references/javascript-express-web-server-security.md` |
+| `javascript_general_web_frontend_security` | `references/javascript-general-web-frontend-security.md` |
+| `javascript_jquery_web_frontend_security` | `references/javascript-jquery-web-frontend-security.md` |
+| `javascript_typescript_nextjs_web_server_security` | `references/javascript-typescript-nextjs-web-server-security.md` |
+| `javascript_typescript_react_web_frontend_security` | `references/javascript-typescript-react-web-frontend-security.md` |
+| `javascript_typescript_vue_web_frontend_security` | `references/javascript-typescript-vue-web-frontend-security.md` |
+| `python_django_web_server_security` | `references/python-django-web-server-security.md` |
+| `python_fastapi_web_server_security` | `references/python-fastapi-web-server-security.md` |
+| `python_flask_web_server_security` | `references/python-flask-web-server-security.md` |
 
-There is no write path. No tool accepts a verb, no tool takes a credential, and no tool
-reaches a network. The code that would write is absent rather than disabled, so pointing a
-repository at this server cannot mutate the set.
+Start at `skill`. It names the language-and-framework workflow and routes to the ten
+reference guides.
+
+The surface is derived from `content/` at boot, so adding a guide to the set is the whole
+procedure for adding a tool — there is no tool file to write. See
+[`.agents/rules/tool-authoring.md`](.agents/rules/tool-authoring.md).
+
+There is no write path. No tool takes an argument at all, no tool accepts a verb, no tool
+takes a credential, and no tool reaches a network. The code that would write is absent
+rather than disabled, so pointing a repository at this server cannot mutate the set.
 
 ## Quick start
 
@@ -57,7 +74,7 @@ variable reference: [`wiki/environments/env.md`](wiki/environments/env.md).
 ```
 content/
   SKILL.md                        the workflow, and the router into references/
-  LICENSE.txt                     Apache-2.0, from the upstream package
+  LICENSE.txt                     Apache-2.0, from the upstream package — not served
   references/
     golang-general-backend-security.md
     javascript-express-web-server-security.md
@@ -70,6 +87,8 @@ content/
     python-fastapi-web-server-security.md
     python-flask-web-server-security.md
 ```
+
+Every `.md` file here is a tool. `LICENSE.txt` is not, and is never served.
 
 ## Register it
 

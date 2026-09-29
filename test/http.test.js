@@ -232,12 +232,7 @@ test("a server process writes nothing to stdout", async () => {
 
     try {
       await client.listTools();
-      textOf(
-        await client.callTool({
-          name: "security_instruction",
-          arguments: { path: "SKILL.md" },
-        })
-      );
+      textOf(await client.callTool({ name: "skill", arguments: {} }));
     } finally {
       await client.close();
     }
@@ -256,7 +251,7 @@ test("the HTTP transport serves the same tools as stdio", async () => {
       const viaHttp = (await http.listTools()).tools;
       const inMemory = (await memory.client.listTools()).tools;
 
-      assert.equal(viaHttp.length, 1, "one tool: security_instruction");
+      assert.equal(viaHttp.length, 11, "one tool per file in the set");
       assert.deepEqual(
         viaHttp.map((tool) => tool.name).sort(),
         inMemory.map((tool) => tool.name).sort()
@@ -272,17 +267,24 @@ test("the HTTP transport serves the same tools as stdio", async () => {
   });
 });
 
-test("security_instruction advertises the path it takes over HTTP too", async () => {
+test("no tool advertises an argument over HTTP either", async () => {
+  // The read-only claim does not depend on the transport. Over stdio a tool takes
+  // no argument; over HTTP it must take none either, or a deployment would have a
+  // second door onto whatever a socket opens that a pipe does not.
   await withServer({}, async ({ url }) => {
     const client = await connect(url);
 
     try {
       const { tools } = await client.listTools();
-      const tool = tools[0];
 
-      assert.deepEqual(Object.keys(tool.inputSchema.properties), ["path"]);
-      assert.equal(tool.inputSchema.properties.path.type, "string");
-      assert.deepEqual(tool.inputSchema.required, ["path"]);
+      for (const tool of tools) {
+        assert.deepEqual(
+          tool.inputSchema.properties ?? {},
+          {},
+          `${tool.name} must take no argument over HTTP`
+        );
+        assert.deepEqual(tool.inputSchema.required ?? [], []);
+      }
     } finally {
       await client.close();
     }
@@ -296,8 +298,8 @@ test("a tool call over HTTP returns the file byte-identically", async () => {
     try {
       const text = textOf(
         await client.callTool({
-          name: "security_instruction",
-          arguments: { path: "references/python-flask-web-server-security.md" },
+          name: "python_flask_web_server_security",
+          arguments: {},
         })
       );
 
@@ -311,37 +313,44 @@ test("a tool call over HTTP returns the file byte-identically", async () => {
   });
 });
 
-test("a traversal attempt over HTTP reports not found and leaks nothing", async () => {
-  // The first five are the paths test/server.test.js already pins. The last three are
-  // the ones a *container* makes reachable: the image sets WORKDIR /srv and copies
-  // src/ and content/ side by side, so the server's own source and manifest are the
-  // nearest neighbours of the set. The defence in src/content.js has never been tested
-  // against the filesystem it is deployed onto.
-  const hostile = [
-    "../../package.json",
-    "../../../.git/config",
-    "references/../../package.json",
-    "/etc/passwd",
-    "C:\\Windows\\System32\\drivers\\etc\\hosts",
-    "../../src/content.js",
-    "../../src/server.js",
-    "../../package-lock.json",
-  ];
-
+test("the server's own source and manifest are unreachable over HTTP", async () => {
+  // There is no `path` argument to aim at them, and no tool that reads anything but
+  // its own file. That is the whole defence, so it is asserted as a fact about the
+  // surface rather than as a set of payloads that a handler happens to refuse: a
+  // container copies `src/` and `content/` side by side, so the server's own source
+  // and its manifest are the nearest neighbours of the set.
   await withServer({}, async ({ url }) => {
     const client = await connect(url);
 
     try {
-      for (const path of hostile) {
-        const text = textOf(
-          await client.callTool({ name: "security_instruction", arguments: { path } })
-        );
+      const { tools } = await client.listTools();
 
-        assert.match(text, /^not found:/, `${path} must be refused`);
-        assert.doesNotMatch(text, /"name":/, `${path} must leak nothing`);
-        assert.doesNotMatch(text, /\[core\]/, `${path} must leak nothing`);
-        assert.doesNotMatch(text, /CONTENT_DIR/, `${path} must leak no source`);
+      for (const tool of tools) {
+        assert.deepEqual(
+          Object.keys(tool.inputSchema.properties ?? {}),
+          [],
+          `${tool.name} must take no argument to aim with`
+        );
       }
+
+      // And nothing outside the set is registered: a tool serving `package.json` or
+      // `src/server.js` would be a door the generator does not open.
+      assert.deepEqual(
+        tools.map((tool) => tool.name).sort(),
+        [
+          "golang_general_backend_security",
+          "javascript_express_web_server_security",
+          "javascript_general_web_frontend_security",
+          "javascript_jquery_web_frontend_security",
+          "javascript_typescript_nextjs_web_server_security",
+          "javascript_typescript_react_web_frontend_security",
+          "javascript_typescript_vue_web_frontend_security",
+          "python_django_web_server_security",
+          "python_fastapi_web_server_security",
+          "python_flask_web_server_security",
+          "skill",
+        ]
+      );
     } finally {
       await client.close();
     }
@@ -369,10 +378,10 @@ test("GET /mcp is refused rather than served", async () => {
 
 test("concurrent requests do not share state", async () => {
   await withServer({}, async ({ url }) => {
-    const paths = [
-      "SKILL.md",
-      "references/golang-general-backend-security.md",
-      "references/javascript-express-web-server-security.md",
+    const tools = [
+      "skill",
+      "golang_general_backend_security",
+      "javascript_express_web_server_security",
     ];
 
     // The transport builds a fresh McpServer per request, so three clients answering
@@ -382,21 +391,19 @@ test("concurrent requests do not share state", async () => {
 
     try {
       const texts = await Promise.all(
-        clients.map((client, i) =>
-          client.callTool({ name: "security_instruction", arguments: { path: paths[i] } })
-        )
+        clients.map((client, i) => client.callTool({ name: tools[i], arguments: {} }))
       );
 
       for (const [i, result] of texts.entries()) {
         assert.ok(
           textOf(result).length > 500,
-          `${paths[i]} came back empty - a request answered with another's file`
+          `${tools[i]} came back empty - a request answered with another's file`
         );
       }
 
       // The first client still works after the other two have been talking.
       assert.ok(textOf(
-        await clients[0].callTool({ name: "security_instruction", arguments: { path: "SKILL.md" } })
+        await clients[0].callTool({ name: "skill", arguments: {} })
       ).length > 0);
     } finally {
       await Promise.all(clients.map((client) => client.close()));

@@ -1,6 +1,6 @@
 ---
 name: agent-wiki-context-repository-map
-description: Orientation for lxagents-security - what lives where, how to build and test it, the two surfaces, and the gotchas that bite first.
+description: Orientation for lxagents-security - what lives where, how the tool surface is derived from content/, how to build and test it, and the gotchas that bite first.
 ---
 
 # Repository Map
@@ -31,14 +31,13 @@ content/                      the published security set - the product
   references/                 ten guides, <language>-<framework>-<stack>-security.md
 src/
   index.js                    entry point; picks stdio or streamable HTTP, owns the HTTP server
-  server.js                   builds the McpServer and registers every tool; exports listTools()
-  content.js                  resolves a path inside content/, with the traversal defence
+  server.js                   builds the McpServer and registers the generated surface; exports listTools()
   cli.js                      the CLI: help, version, tools, serve
-  version.js                  reads version out of package.json at import
+  version.js                  ROOT, CONTENT_DIR, and the version out of package.json
   tools/
-    security-instruction.js   the only tool: read one file from the set by path
+    from-content.js           builds the whole tool surface from content/, once, at import
 test/
-  server.test.js              registration, schema, all ten guides, traversal, surface parity
+  server.test.js              bijection, derivation, no-argument surface, served totals, parity
   http.test.js                the streamable HTTP transport, over a real socket
 wiki/                         human documentation
 .agents/                      this set - rules, agent wiki, memory, indexes
@@ -48,7 +47,7 @@ wiki/                         human documentation
 
 | Command | What it does |
 |---|---|
-| `npm install` | Installs `@modelcontextprotocol/sdk` and `zod`. |
+| `npm install` | Installs `@modelcontextprotocol/sdk`. |
 | `npm test` | `node --test`. The whole suite; there is no watch mode. |
 | `npm run cli -- tools` | Lists registered tools through the CLI surface. |
 | `npm start` | Serves over stdio. |
@@ -70,21 +69,29 @@ asking.
 
 ## The two surfaces
 
-`src/server.js` holds the only tool list. `src/cli.js` imports `listTools()` from it
-rather than keeping its own, and `test/server.test.js` asserts that what the CLI would
-print matches what an MCP client receives from `tools/list`. Adding a tool in one place
-therefore adds it in both, and there is no way to add it to only one without failing the
-suite.
+The tool surface is derived, not declared. `src/tools/from-content.js` walks `content/`
+once at import and builds one tool per `.md` file, naming each after its own filename.
+`src/server.js` registers that array and exports `listTools()`; `src/cli.js` imports
+`listTools()` from it rather than keeping its own, and `test/server.test.js` asserts that
+what the CLI would print matches what an MCP client receives from `tools/list`. Adding a
+guide to `content/` therefore adds a tool to both, and there is no way to add it to only
+one without failing the suite.
+
+Eleven tools today. None of them takes an argument.
 
 ## Gotchas
 
 * **stdout is the protocol.** On stdio, a `console.log` anywhere on the server path
   corrupts the JSON-RPC stream. Log to stderr. Only CLI commands print.
-* **Tool schemas are raw shapes.** `server.tool()` wants `{ a: z.number() }`, not
-  `z.object({ ... })`. Wrapping it silently produces a tool with no parameters.
-* **Reject `..` before the filesystem call.** A check that runs after `fs` is checking a
-  value the caller already influenced. `src/content.js` does both: the segment check
-  first, the containment check after, and the second is redundant on purpose.
+* **Do not hand-write a tool module.** Adding a `.md` file to `content/` *is* adding a
+  tool. A module under `src/tools/` beside `from-content.js` puts two tools on the
+  surface for one file and is invisible to the derivation. See
+  [`../../rules/tool-authoring.md`](../../rules/tool-authoring.md).
+* **A guide without a `description:` in its frontmatter will not boot.** That is the
+  startup error you will see first, and it names the file. Frontmatter is read by a
+  hand-rolled single-line parser, not a YAML dependency.
+* **Nothing is unserved except by not being `.md`.** `content/LICENSE.txt` has no tool
+  because it is not markdown. Nothing else in the set opts out.
 * **A fresh `McpServer` per HTTP request.** `src/index.js` builds and closes one per
   request because `McpServer` holds per-connection state. Do not hoist it to module
   scope.
@@ -96,10 +103,12 @@ suite.
 * **`content/` is the product, not a source folder.** Every file in it is served
   verbatim on the next boot, with its frontmatter intact. `src/` is local; a change to
   `content/` changes what every consuming repository reads.
-* **Do not add a write path.** The single-tool read-only surface is the property a
-  consuming repository depends on. See [`../../rules/tool-authoring.md`](../../rules/tool-authoring.md).
-* **`version.js` reads `package.json` at import** via a path relative to `src/`. Moving
-  it breaks the version without failing a test.
+* **Do not add a write path, and do not add an argument.** The read-only surface is the
+  property a consuming repository depends on, and no argument means there is no path to
+  traverse with.
+* **`version.js` reads `package.json` at import** via a path relative to `src/`, and
+  holds `CONTENT_DIR` for the generator. Moving it breaks the version and every served
+  file without failing a test.
 
 ## Where the conventions come from
 

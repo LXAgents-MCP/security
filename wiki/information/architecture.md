@@ -1,16 +1,15 @@
 # Architecture
 
-Four source files and a folder of tools. There is no framework, no build step, and no
-code generation.
+Four source files and one generated tool surface. There is no framework and no build step.
 
 ```
 src/
   index.js     entry point: picks a transport, owns the HTTP server
   server.js    builds the McpServer, registers every tool, exports listTools()
-  content.js   resolves a path inside content/, with the traversal defence
   cli.js       the CLI: help, version, tools, serve
-  version.js   reads the version out of package.json at import
-  tools/       one file per tool
+  version.js   reads the version out of package.json, and holds ROOT and CONTENT_DIR
+  tools/
+    from-content.js   builds the whole tool surface from content/, once, at import
 content/       the published security set
 ```
 
@@ -61,54 +60,56 @@ points nowhere useful.
 
 ## The tool layer
 
-Each tool is one file at `src/tools/{tool_name}.js`, exporting a `config` and a
-`handler`:
+There is no hand-written tool in this repository. `src/tools/from-content.js` walks
+`CONTENT_DIR` once, at import, and builds one tool per `.md` file it finds:
 
 ```js
-export const config = {
-  name: "security_instruction",
-  description: "Read one security guide from the global security set by path…",
-  schema: {                              // optional
-    path: z.string().describe("Path inside the set, e.g. 'SKILL.md'. Never a leading slash, never '..'."),
-  },
-};
+for (const path of markdownFiles()) {
+  const name = toolNameFor(path);            // folder dropped, .md off, kebab → snake
+  const text = readFileSync(join(CONTENT_DIR, path), "utf8");
+  const { description } = parseFrontmatter(text);
 
-export async function handler({ path }) {
-  const text = await readSetFile(path);
-  if (text === null) return { content: [{ type: "text", text: `not found: ${path}` }] };
-  return { content: [{ type: "text", text }] };
+  files.set(name, path);
+  tools.push({
+    config: { name, description },
+    handler: async () => ({ content: [{ type: "text", text }] }),
+  });
 }
-
-export default { config, handler };
 ```
 
-`src/server.js` imports each module individually, collects them into one
-`TOOL_MODULES` array, and registers each:
+`CONTENT_TOOLS` is frozen at module scope and `TOOL_FILES` maps each tool name back to the
+file it serves. `src/server.js` registers the array as-is:
 
 ```js
-server.tool(config.name, config.description, config.schema, handler);
+const TOOL_MODULES = Object.freeze(CONTENT_TOOLS);
 ```
 
-A tool that declares no `schema` is registered with the three-argument form instead.
+Three things fail **at boot** rather than at the first call, because a set that cannot be
+routed on should fail the process and not the caller:
 
-`schema` is a **zod raw shape** — a plain object of validators, not a `z.object(...)`.
-The MCP SDK wraps it itself and converts it to the JSON Schema the client sees;
-wrapping it first produces a tool that advertises no parameters and receives none.
+* two files deriving the same tool name — one would silently shadow the other;
+* a file deriving a name that is not a valid MCP tool name;
+* a file with no frontmatter `description:` — a tool a client cannot choose between.
+
+The file is served whole, frontmatter included, byte-identical to disk. The frontmatter
+is part of the published text, not metadata to strip — and `description:` is load-bearing
+twice over, as both the tool description and the route a caller makes on it.
+
+No generated tool declares a schema, so `src/server.js` registers with the
+three-argument `server.tool(name, description, handler)` form. There is no
+`config.schema` branch to take the four-argument form, and no code path by which an
+argument could be introduced without hand-writing a tool module beside the generator.
 
 ## Reading from the set
 
-Every served file is resolved inside `src/content.js`, and the boundary is the constant
-`CONTENT_DIR` rather than anything a caller passed in.
+Everything is resolved at import, from the constant `CONTENT_DIR` in `src/version.js`.
+A call is a map lookup and a string that was read once at startup: there is no filesystem
+I/O on the read path, and there is no path a caller could aim at anything with.
 
-`readSetFile` rejects a `..` segment **before** it calls the filesystem. A path that
-reaches `fs` with a `..` in it has already been resolved against the process working
-directory, so a check that runs afterwards is checking a value the caller already
-influenced. It then confirms the resolved path is still inside `CONTENT_DIR` — redundant
-by design, so that weakening the first check cannot silently widen what is reachable.
-
-An unreadable or unknown path returns `null`, which the tool turns into `not found` as
-ordinary content. A traversal attempt and a typo are indistinguishable from outside,
-which is the point. A thrown error would be distinguishable.
+The old defence — reject a `..` segment before calling the filesystem, then confirm the
+resolved path is still inside `CONTENT_DIR` — guarded a `path` argument. With no argument
+there is nothing to guard, so `src/content.js` was deleted rather than left in place with
+no caller, where a future reader could not tell whether it was load-bearing.
 
 ## Authentication
 
@@ -130,7 +131,8 @@ rather than keeping a list of its own.
 
 `test/server.test.js` asserts that what the CLI would print matches what an MCP client
 receives from `tools/list`, so the two surfaces cannot drift apart without failing the
-suite.
+suite. The same file pins the bijection between the files in `content/` and the tools on
+the surface, in both directions.
 
 ## Related pages
 

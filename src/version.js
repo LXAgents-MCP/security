@@ -1,12 +1,20 @@
 import { readFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const PACKAGE_JSON = resolve(
-  dirname(fileURLToPath(import.meta.url)),
-  "..",
-  "package.json"
-);
+const here = dirname(fileURLToPath(import.meta.url));
+
+/** The repository root, resolved from this file rather than from cwd. */
+export const ROOT = join(here, "..");
+
+/**
+ * The published set. Every served file is read from inside this directory and
+ * nowhere else, so containment is a property of the constant rather than of
+ * what a caller passed in.
+ */
+export const CONTENT_DIR = join(ROOT, "content");
+
+const PACKAGE_JSON = join(ROOT, "package.json");
 
 let resolved = "0.0.0";
 try {
