@@ -30,6 +30,7 @@ current request.
 |---|---|
 | [`../memory/tasks/http-transport-and-docker.md`](../memory/tasks/http-transport-and-docker.md) | Host allow-list, explicit host binding, drain-before-close, and the container image. No second transport, no version change. |
 | [`../memory/tasks/per-file-tools.md`](../memory/tasks/per-file-tools.md) | Replacing the single path-taking tool with eleven tools derived from `content/` — one per file, no argument anywhere. Released as `1.0.0`. |
+| [`../memory/tasks/express-cluster-migration.md`](../memory/tasks/express-cluster-migration.md) | Replacing `node:http` with an express application at `POST /mcp`, and answering requests from cluster workers on one port. The `Dockerfile` is untouched. |
 
 ## Maintenance
 
