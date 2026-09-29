@@ -29,7 +29,7 @@ npm start
 npm run start:http
 
 # streamable HTTP on another port
-MCP_TRANSPORT=http PORT=8080 node src/index.js
+npm run start:http -- --port 8080
 
 # the same, through the CLI
 lxagents-security serve --http --port 8080
@@ -37,6 +37,13 @@ lxagents-security serve --http --port 8080
 
 The CLI's `serve` command sets both variables from its flags, so `--http`, `--stdio`,
 and `--port` are equivalent to exporting them.
+
+`start:http` goes through `serve --http` rather than setting the variable in the script.
+A `VAR=value command` prefix is a shell feature, not a Node one: it works under `sh` and
+fails in `cmd.exe`, so the same script could not run on a stock Windows checkout. Setting
+the variable in `src/cli.js` keeps one mechanism for both platforms and adds no
+dependency. `MCP_TRANSPORT=http node src/index.js` still works wherever the shell
+supports it; it is the npm script, not the server, that avoids the prefix.
 
 ## Related pages
 
