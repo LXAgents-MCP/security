@@ -84,7 +84,7 @@ Add CI that runs `npm test` on push. The suite is the only thing holding the two
 and the file-to-tool bijection together, and nothing runs it automatically.
 
 Note that `test/http.test.js` is timing-sensitive under a full parallel run on a slow
-or network filesystem: it spawns a child server per test and waits on a startup line. One
-startup-line assertion failed once out of five full-suite runs on WSL `/mnt/c` and passed
-every time the file was run alone. Suspect the harness, not the server, before suspecting
-a change.
+or network filesystem: it spawns a child server per test and waits on a startup line.
+`the startup line announces that no allow-list is applied` failed in 2 of 8 full-suite runs
+on WSL `/mnt/c`, and passed every time the file was run alone. It is a harness race, not a
+server defect. Suspect the harness, not the server, before suspecting a change.
