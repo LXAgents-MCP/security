@@ -37,6 +37,7 @@ src/
     security-instruction.js   the only tool: read one file from the set by path
 test/
   server.test.js              registration, schema, all ten guides, traversal, surface parity
+  http.test.js                the streamable HTTP transport, over a real socket
 wiki/                         human documentation
 .agents/                      this set - rules, agent wiki, memory, indexes
 ```
@@ -56,8 +57,9 @@ wiki/                         human documentation
 
 | Variable | Read by | Effect |
 |---|---|---|
-| `MCP_TRANSPORT` | `src/index.js` | `stdio` (default) or `http`. |
+| `MCP_TRANSPORT` | `src/index.js` | `stdio` (default) or `http` (Streamable HTTP on `/mcp`). |
 | `PORT` | `src/index.js` | HTTP port, default `3000`. |
+| `HOST` | `src/index.js` | Interface the HTTP transport binds, default `0.0.0.0` — every IPv4 interface. |
 
 There is no `API_KEY`. Nothing here reaches an external service.
 

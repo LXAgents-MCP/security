@@ -28,6 +28,23 @@ each request and closed when the response closes. That is deliberate — `McpSer
 holds per-connection state, so hoisting one to module scope would leak state between
 unrelated callers.
 
+The interface is named rather than defaulted. `listen(port)` with no host argument binds
+`::` — every IPv6 address plus IPv4-mapped ones — which reads as a decision to expose the
+server everywhere when it is really the absence of one. `HOST` names the interface, and
+its `0.0.0.0` default says on the startup line that the port is open on every interface.
+
+### Shutdown drains before it closes
+
+`SIGINT` and `SIGTERM` run the same three steps, in this order: stop accepting
+connections, close the sockets that are idle, then wait for what is still in flight
+with a five-second ceiling before cutting it off. Idle keep-alive sockets are closed
+separately because `server.close()` waits on them, and a client that opened one and went
+quiet would otherwise hold the process open for a request that no longer exists.
+
+Because the transport is stateless there is no session to drain — what drains is the
+requests. The guard makes a second `SIGINT` during the drain a no-op rather than a
+second teardown.
+
 ### stdout belongs to the protocol
 
 On stdio, stdout **is** the JSON-RPC channel. Server-side logging goes to stderr and

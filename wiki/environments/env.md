@@ -1,12 +1,16 @@
 # Environment Variables
 
-Two variables, both optional. The server starts with neither set and answers every
-request.
+Three variables, all optional. The server starts with none of them set and answers
+every request.
 
 | Variable | Default | Read by | Effect |
 |---|---|---|---|
-| `MCP_TRANSPORT` | `stdio` | `src/index.js` | `stdio` or `http` (`streamable-http` is accepted too). |
+| `MCP_TRANSPORT` | `stdio` | `src/index.js` | `stdio` or `http` (`streamable-http` is accepted too). `http` is **Streamable HTTP on `/mcp`** — it is the only HTTP transport this server has. |
 | `PORT` | `3000` | `src/index.js` | The port the HTTP transport listens on. Ignored on stdio. |
+| `HOST` | `0.0.0.0` | `src/index.js` | The interface the HTTP transport binds. Ignored on stdio. |
+
+`0.0.0.0` is every IPv4 interface. It is **not** the dual-stack `::` that Node binds when
+no interface is named, so a client reaching the server over IPv6 needs `HOST=::`.
 
 ## There is no `API_KEY`
 

@@ -34,6 +34,18 @@ of scope. This record supersedes the plan folder's own naming, which still says 
 | Container | `Dockerfile` and `.dockerignore`; `node src/index.js` with `MCP_TRANSPORT=http`. |
 | Documentation | `wiki/environments/docker.md` new; `README.md`, `env.md`, `setup.md`, `architecture.md`, `overview.md`, the repository map and the state record updated. |
 
+## Test counts
+
+| Point | Tests | Pass | Fail |
+|---|---|---|---|
+| Baseline, before any change | 12 | 12 | 0 |
+| After the host binding and the socket suite | 23 | 23 | 0 |
+
+The suite runs on Node 20+ with `node --test` and no framework. The socket tests start
+`src/index.js` as a real child process, because an imported module cannot be given a
+second port or stopped; their readiness deadline is 30 seconds, which is generous on
+purpose and costs nothing in the common case.
+
 ## What the owner still has to run
 
 **The image has never been built.** Docker was not used for this work.
