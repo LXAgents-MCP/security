@@ -47,14 +47,31 @@ The suite runs on Node 20+ with `node --test` and no framework. The socket tests
 second port or stopped; their readiness deadline is 30 seconds, which is generous on
 purpose and costs nothing in the common case.
 
+## What was verified, and how
+
+Run on Node 22.15.0. Every check below was executed; nothing in this section is an
+intention.
+
+| Check | Result |
+|---|---|
+| `npm test` | 29 tests, 29 pass, 0 fail |
+| `npm run start:http` serves `/healthz` | yes, on the port it was given |
+| `HOST=127.0.0.1` is what the startup line reports | yes |
+| `SIGINT` drains, logs, and exits 0 | yes |
+| Every `COPY` source in the Dockerfile resolves against the tree | yes |
+| Every `.dockerignore` entry checked against the tree | yes; `.github` and `compose.yaml` are the deliberate forward-looking exclusions |
+| `npm ci --ignore-scripts --omit=dev` against `package.json` + `package-lock.json` alone | succeeds, 91 packages |
+| Every markdown link on every page this change touched | resolves, except two pre-existing ones (below) |
+| `docker build` | **not run.** No Docker command was issued for this work. |
+
 ## What the owner still has to run
 
 **The image has never been built.** Docker was not used for this work.
 
 ```bash
 docker build -t lxagents-security:0.1.0 .
-docker run --rm -i lxagents-security:0.1.0 < ../dev/null
-docker run --rm -p 3000:3000 -e MCP_TRANSPORT=http lxagents-security:0.1.0
+docker run --rm -i -e MCP_TRANSPORT=stdio lxagents-security:0.1.0 < ../dev/null
+docker run --rm -p 3000:3000 lxagents-security:0.1.0
 curl -s http://localhost:3000/healthz
 ```
 
@@ -70,3 +87,8 @@ curl -s http://localhost:3000/healthz
   on every interface with no `Host` filtering, because an unset `MCP_ALLOWED_HOSTS` means
   the guard is off. That is the safe-looking default being the unsafe one. The README
   security note says so; nothing in the code prevents it.
+* **Two broken links that predate this work.** `wiki/environments/env.md` and
+  `wiki/information/architecture.md` both point at `../../../.agents/rules/secrets.md`,
+  which is one level above the repository. `../../.agents/rules/secrets.md` would
+  resolve. Found while checking the links this change introduced; left alone because it
+  is not this change's to make.
