@@ -8,11 +8,13 @@
 import { createServer as createHttpServer } from "node:http";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { hostHeaderValidation } from "@modelcontextprotocol/sdk/server/middleware/hostHeaderValidation.js";
 import { SERVER_ID, createServer } from "./server.js";
 import { version } from "./version.js";
 
 const transportName = (process.env.MCP_TRANSPORT ?? "stdio").toLowerCase();
 const port = Number.parseInt(process.env.PORT ?? "3000", 10);
+const host = process.env.HOST || "0.0.0.0";
 
 async function readBody(req, limit = 4 * 1024 * 1024) {
   const chunks = [];
@@ -31,8 +33,73 @@ function rpcError(res, status, code, message) {
   res.end(JSON.stringify({ jsonrpc: "2.0", error: { code, message }, id: null }));
 }
 
+/**
+ * The `Host` header allow-list, when one is configured.
+ *
+ * `MCP_ALLOWED_HOSTS` is comma-separated. Unset - or set to nothing but commas and
+ * spaces - means the check is skipped rather than guessed at, and the startup line says
+ * so, because an absent control and a control that is quietly refusing everything are
+ * very different states and only one of them is obvious from the outside. A wrong
+ * allow-list is a worse failure than an absent one: it turns every request into a 403
+ * with nothing to suggest what was misconfigured.
+ *
+ * Why a list is needed at all: the SDK applies host validation automatically only
+ * through its Express app factory, and only when the host is loopback. This server
+ * binds `0.0.0.0` by default, so without an explicit list there is no `Host` filtering
+ * in exactly the deployment - a container, a shared host - where it would matter.
+ *
+ * @returns {string[]}
+ */
+function allowedHosts() {
+  const raw = process.env.MCP_ALLOWED_HOSTS;
+  if (!raw) return [];
+  return raw
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Refuse a request whose `Host` header is not on the allow-list.
+ *
+ * The matching itself is the SDK's `hostHeaderValidation`, not a copy of it: the port
+ * is ignored, an IPv6 literal is matched in brackets, and the refusal is a JSON-RPC
+ * error body with status 403. That middleware is written for Express and reaches for
+ * two things a `node:http` response does not have, `res.status(n)` and `res.json(body)`.
+ * They are supplied here and nothing else is, so the semantics stay the SDK's rather
+ * than becoming a second implementation free to drift from it.
+ *
+ * @param {string[]} allowed
+ * @returns {boolean} true if the request was refused. A refusal is already answered.
+ */
+function hostRefused(allowed, req, res) {
+  if (allowed.length === 0) return false;
+
+  res.status = (code) => {
+    res.writeHead(code, { "content-type": "application/json" });
+    return res;
+  };
+  res.json = (body) => {
+    res.end(JSON.stringify(body));
+  };
+
+  let refused = true;
+  // Synchronous: the middleware writes its answer or calls next() before returning.
+  hostHeaderValidation(allowed)(req, res, () => {
+    refused = false;
+  });
+
+  return refused;
+}
+
 if (transportName === "http" || transportName === "streamable-http") {
+  const allowed = allowedHosts();
+
   const httpServer = createHttpServer(async (req, res) => {
+    // Ahead of every route, including the health check: an allow-list that guards
+    // `/mcp` and not `/healthz` is an allow-list with a hole in it.
+    if (hostRefused(allowed, req, res)) return;
+
     if (req.method === "GET" && req.url === "/healthz") {
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ status: "ok", server: SERVER_ID, version }));
@@ -73,13 +140,59 @@ if (transportName === "http" || transportName === "streamable-http") {
     }
   });
 
-  httpServer.listen(port, () => {
-    process.stderr.write(`${SERVER_ID} ${version} serving over http on :${port}/mcp\n`);
+  // The interface is named rather than left to the default. Omitting the
+  // argument binds `::` - every IPv6 address, plus IPv4-mapped ones - which
+  // looks like a deliberate choice of "all interfaces" and is not one the
+  // operator made. `0.0.0.0` is the same reach over IPv4 and is legible, and
+  // `HOST=::` is the explicit opt-in for the dual-stack default.
+  httpServer.listen(port, host, () => {
+    const where = host === "0.0.0.0" ? "all interfaces" : host;
+    process.stderr.write(`${SERVER_ID} ${version} serving over http on :${port}/mcp (${where})\n`);
+
+    // Said out loud, because the default is the unguarded one. Someone reading a
+    // container's startup log is the only person who can act on it, and a control
+    // that is off silently is worse than no control at all - it reads as present.
+    if (allowed.length === 0) {
+      process.stderr.write(
+        `${SERVER_ID} ${version} MCP_ALLOWED_HOSTS is unset, so no Host header allow-list is applied.\n`
+      );
+    }
   });
 
-  const shutdown = () => httpServer.close(() => process.exit(0));
-  process.on("SIGTERM", shutdown);
-  process.on("SIGINT", shutdown);
+  /*
+   * Shutdown, in three steps, in this order.
+   *
+   * `close()` first, so nothing new arrives - a request accepted during the
+   * drain gets an answer rather than a refused connection. Then idle keep-alive
+   * sockets are closed, because `close()` waits on them and a client that
+   * opened one and went quiet would hold the process open indefinitely for a
+   * request that no longer exists. Then a short grace period, after which
+   * whatever is genuinely still in flight is cut off rather than waited on
+   * forever.
+   *
+   * Each request here is self-contained - a fresh McpServer, closed when its
+   * response closes - so there is no session state to drain. What drains is
+   * the requests.
+   */
+  let shuttingDown = false;
+
+  const shutdown = (signal) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    process.stderr.write(`${SERVER_ID} ${version} ${signal}, draining\n`);
+
+    const forced = setTimeout(() => httpServer.closeAllConnections(), 5000);
+    forced.unref();
+
+    httpServer.close(() => {
+      clearTimeout(forced);
+      process.exit(0);
+    });
+    httpServer.closeIdleConnections();
+  };
+
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
 } else {
   const server = createServer({ version });
   await server.connect(new StdioServerTransport());

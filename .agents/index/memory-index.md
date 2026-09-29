@@ -24,6 +24,12 @@ current request.
 |---|---|
 | [`../memory/decisions/harness-branch-naming.md`](../memory/decisions/harness-branch-naming.md) | Why a harness-designated branch never overrides the branching strategy. |
 
+## Tasks
+
+| File | Purpose |
+|---|---|
+| [`../memory/tasks/http-transport-and-docker.md`](../memory/tasks/http-transport-and-docker.md) | Host allow-list, explicit host binding, drain-before-close, and the container image. No second transport, no version change. |
+
 ## Maintenance
 
 Any file added to or removed from `.agents/memory/` is reflected here **in the same

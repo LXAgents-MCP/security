@@ -28,6 +28,30 @@ each request and closed when the response closes. That is deliberate — `McpSer
 holds per-connection state, so hoisting one to module scope would leak state between
 unrelated callers.
 
+The interface is named rather than defaulted. `listen(port)` with no host argument binds
+`::` — every IPv6 address plus IPv4-mapped ones — which reads as a decision to expose the
+server everywhere when it is really the absence of one. `HOST` names the interface, and
+its `0.0.0.0` default says on the startup line that the port is open on every interface.
+
+`MCP_ALLOWED_HOSTS` guards what reaches it. When it is set, every request — including
+`/healthz` — is matched against it first, and a `Host` outside the list is refused with
+a 403. When it is unset, no list is applied, and the startup line says so. The matching
+is the SDK's `hostHeaderValidation`; `src/index.js` supplies the two Express-shaped
+response helpers that middleware needs and delegates the decision, so the port-agnostic
+matching and the JSON-RPC refusal body have one implementation rather than two.
+
+### Shutdown drains before it closes
+
+`SIGINT` and `SIGTERM` run the same three steps, in this order: stop accepting
+connections, close the sockets that are idle, then wait for what is still in flight
+with a five-second ceiling before cutting it off. Idle keep-alive sockets are closed
+separately because `server.close()` waits on them, and a client that opened one and went
+quiet would otherwise hold the process open for a request that no longer exists.
+
+Because the transport is stateless there is no session to drain — what drains is the
+requests. The guard makes a second `SIGINT` during the drain a no-op rather than a
+second teardown.
+
 ### stdout belongs to the protocol
 
 On stdio, stdout **is** the JSON-RPC channel. Server-side logging goes to stderr and
@@ -89,6 +113,8 @@ which is the point. A thrown error would be distinguishable.
 ## Authentication
 
 There is none. No tool in this repository reads a credential, and none opens a socket.
+The HTTP transport's `MCP_ALLOWED_HOSTS` is a filter, not a credential: it decides which
+`Host` values are answered at all, and it says nothing about who is asking.
 
 The template this repository was scaffolded from took one server-wide `API_KEY` and read
 it inside the handler of each tool that needed it. That pattern is still recorded in

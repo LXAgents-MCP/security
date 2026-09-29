@@ -36,8 +36,21 @@ npm run cli -- tools
 npm start
 ```
 
-No key, no environment variable, no configuration. The server starts and answers with
-nothing set.
+On the stdio default, no key, no environment variable, no configuration. The server
+starts and answers with nothing set. No tool reads a credential, on any transport.
+
+### Security note — the HTTP transport
+
+`MCP_ALLOWED_HOSTS` is a comma-separated allow-list of `Host` header values, and **an
+empty value means the guard is off** — not "allow everything on the list", which is the
+same thing, but not "allow nothing", which is what the name suggests. The server
+announces on startup when it is unset, because the default is the unguarded one.
+
+The list is needed because the SDK applies host validation on its own only when the
+server is on loopback, and the HTTP transport binds `0.0.0.0` — so without an explicit
+list, nothing is filtering the `Host` header in exactly the deployment that reaches it
+from a network. Set it before exposing the port anywhere but your own machine. Full
+variable reference: [`wiki/environments/env.md`](wiki/environments/env.md).
 
 ## The set
 
@@ -76,6 +89,7 @@ The `/mcp` path is not optional on either HTTP form.
 - [`wiki/environments/setup.md`](wiki/environments/setup.md) — installing and running
   both modes.
 - [`wiki/environments/env.md`](wiki/environments/env.md) — environment variables.
+- [`wiki/environments/docker.md`](wiki/environments/docker.md) — the container image.
 
 Full map: [`.agents/index/project-wiki-index.md`](.agents/index/project-wiki-index.md).
 
