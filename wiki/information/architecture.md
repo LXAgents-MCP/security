@@ -1,10 +1,11 @@
 # Architecture
 
-Four source files and one generated tool surface. There is no framework and no build step.
+Five source files and one generated tool surface. There is no build step.
 
 ```
 src/
-  index.js     entry point: picks a transport, owns the HTTP server
+  index.js     entry point: picks a transport, and owns the HTTP server
+  app.js       the express application, as a pure factory — builds, never listens
   server.js    builds the McpServer, registers every tool, exports listTools()
   cli.js       the CLI: help, version, tools, serve
   version.js   reads the version out of package.json, and holds ROOT and CONTENT_DIR
@@ -13,14 +14,17 @@ src/
 content/       the published security set
 ```
 
+`app.js` and `index.js` are split on purpose. `app.js` returns an express app and
+nothing else — it does not listen. A file that both builds the app and binds a port
+cannot be reasoned about, or tested, without binding one.
+
 ## Entry point and transports
 
 `src/index.js` reads `MCP_TRANSPORT` and serves either way:
 
 * **stdio** (default) — one `McpServer` connected to a `StdioServerTransport` for the
   life of the process.
-* **streamable HTTP** — a plain `node:http` server exposing `GET /healthz` and
-  `POST /mcp`.
+* **streamable HTTP** — an express application exposing `GET /healthz` and `POST /mcp`.
 
 The HTTP transport is **stateless**: a fresh `McpServer` and transport are built for
 each request and closed when the response closes. That is deliberate — `McpServer`
@@ -35,9 +39,18 @@ its `0.0.0.0` default says on the startup line that the port is open on every in
 `MCP_ALLOWED_HOSTS` guards what reaches it. When it is set, every request — including
 `/healthz` — is matched against it first, and a `Host` outside the list is refused with
 a 403. When it is unset, no list is applied, and the startup line says so. The matching
-is the SDK's `hostHeaderValidation`; `src/index.js` supplies the two Express-shaped
-response helpers that middleware needs and delegates the decision, so the port-agnostic
-matching and the JSON-RPC refusal body have one implementation rather than two.
+is the SDK's `hostHeaderValidation`, mounted natively by `src/app.js` — it is
+Express-shaped, refusing with `res.status(code).json(body)`, so an express app is what
+it expects and the earlier hand-written response shim is gone. The port-agnostic matching
+and the JSON-RPC refusal body therefore have one implementation rather than two.
+
+### The body limit
+
+`express.json({ limit })` is 4 MB. An oversized body and a malformed one are both
+answered **400 / `-32700`**, and that collapse is deliberate: the hand-rolled body reader
+this replaced threw one failure for both, so a client was never taught to expect anything
+different for the second case. `X-Powered-By` is disabled — it would hand an
+unauthenticated caller the framework and its version for free.
 
 ### Shutdown drains before it closes
 
@@ -48,8 +61,10 @@ separately because `server.close()` waits on them, and a client that opened one 
 quiet would otherwise hold the process open for a request that no longer exists.
 
 Because the transport is stateless there is no session to drain — what drains is the
-requests. The guard makes a second `SIGINT` during the drain a no-op rather than a
-second teardown.
+requests. The primary relays the signal to its workers and waits for the last one to
+go, so the port is genuinely closed before the process that started it is. A second
+signal during the drain is the operator saying they have stopped waiting, and it exits
+at once rather than queueing behind the first.
 
 ### stdout belongs to the protocol
 

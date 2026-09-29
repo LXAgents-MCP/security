@@ -35,11 +35,13 @@ Node.js 20+, ESM, no build step. One runtime dependency:
   [`../tasks/per-file-tools.md`](../tasks/per-file-tools.md).
 * **Read-only, structurally.** No tool accepts a verb, takes a credential, or opens a
   socket. The code that would write is absent rather than disabled.
-* **A configured HTTP transport.** `POST /mcp` is still Streamable HTTP, the only HTTP
-  transport, selected by `MCP_TRANSPORT=http`. It now names its interface with `HOST`
-  (default `0.0.0.0`), drains in-flight requests on `SIGINT`/`SIGTERM`, and applies
-  `MCP_ALLOWED_HOSTS` when it is set — **off when it is not**, and announced on startup
-  when it is off. The path and the transport did not change.
+* **An express HTTP transport.** `POST /mcp` is still Streamable
+  HTTP, the only HTTP transport, selected by `MCP_TRANSPORT=http`; the `node:http` server
+  and its hand-rolled body reader and `Host` shim are gone, replaced by `src/app.js` as
+  a pure factory. It names its interface with `HOST` (default `0.0.0.0`), drains
+  in-flight requests on `SIGINT`/`SIGTERM`, and applies `MCP_ALLOWED_HOSTS` when it is
+  set — **off when it is not**, and announced on startup when it is off. The path and the
+  transport did not change.
 * **Surface parity.** `src/cli.js` prints `listTools()` from `src/server.js`;
   `test/server.test.js` pins the CLI list against the MCP client's `tools/list` in
   memory, and `test/http.test.js` pins it again over a socket.

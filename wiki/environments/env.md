@@ -8,7 +8,7 @@ every request.
 | `MCP_TRANSPORT` | `stdio` | `src/index.js` | `stdio` or `http` (`streamable-http` is accepted too). `http` is **Streamable HTTP on `/mcp`** — it is the only HTTP transport this server has. |
 | `PORT` | `3000` | `src/index.js` | The port the HTTP transport listens on. Ignored on stdio. |
 | `HOST` | `0.0.0.0` | `src/index.js` | The interface the HTTP transport binds. Ignored on stdio. |
-| `MCP_ALLOWED_HOSTS` | *unset* | `src/index.js` | Comma-separated `Host` allow-list. **Unset means no allow-list is applied.** Read on the HTTP transport only. |
+| `MCP_ALLOWED_HOSTS` | *unset* | `src/app.js` | Comma-separated `Host` allow-list. **Unset means no allow-list is applied.** Read on the HTTP transport only. |
 
 `0.0.0.0` is every IPv4 interface. It is **not** the dual-stack `::` that Node binds when
 no interface is named, so a client reaching the server over IPv6 needs `HOST=::`.
