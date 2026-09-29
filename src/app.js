@@ -62,12 +62,9 @@ function rpcError(res, status, code, message) {
 /**
  * Build the HTTP application.
  *
- * @param {{ inFlight?: Set<() => void> }} [options] — `inFlight`, when given, receives
- *   one closer per in-flight `/mcp` request so the entry point can drain them
- *   deliberately on shutdown rather than dropping them when the process exits.
  * @returns {import("express").Express}
  */
-export function createApp({ inFlight } = {}) {
+export function createApp() {
   const app = express();
 
   // Express stamps `X-Powered-By: Express` on every response it sends, which hands an
@@ -117,13 +114,10 @@ export function createApp({ inFlight } = {}) {
     // Fires on disconnect as well as on a clean close, which is the case that leaks.
     // Closing both halves is what keeps a stateless transport stateless: a retained
     // McpServer per request would be a leak per request.
-    const finish = () => {
-      if (inFlight) inFlight.delete(finish);
+    res.on("close", () => {
       void transport.close();
       void server.close();
-    };
-    if (inFlight) inFlight.add(finish);
-    res.on("close", finish);
+    });
 
     try {
       await server.connect(transport);

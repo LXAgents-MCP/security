@@ -194,3 +194,14 @@ versions — so this is a **pre-existing characteristic surfaced by measurement,
 regression from the migration**. It is left as a finding rather than a fix, because
 fixing it means changing the stateless per-request design that this repository documents
 as a security property. It is worth its own task.
+
+### Amendment — a dead option, removed
+
+`createApp({ inFlight })` shipped in task 2 and nothing ever passed it. This
+repository's shutdown drains through `closeAllConnections()`, not through an in-flight
+set, so the option and its two conditional guards were a shape copied from the
+SSE repository, which does keep one and does drain it.
+
+Removed rather than left in place: an option with no caller is not a hook for a future
+change, it is a second answer to the question "how does this server shut down", and only
+one of the two is true here.
