@@ -30,7 +30,7 @@ content/                      the published security set - the product
   LICENSE.txt                 Apache-2.0, from the upstream package
   references/                 ten guides, <language>-<framework>-<stack>-security.md
 src/
-  index.js                    entry point; picks stdio or streamable HTTP, owns the HTTP server
+  index.js                    entry point; picks stdio or streamable HTTP, owns the cluster
   app.js                      the express application as a pure factory - builds, never listens
   server.js                   builds the McpServer and registers the generated surface; exports listTools()
   cli.js                      the CLI: help, version, tools, serve
@@ -39,7 +39,7 @@ src/
     from-content.js           builds the whole tool surface from content/, once, at import
 test/
   server.test.js              bijection, derivation, no-argument surface, served totals, parity
-  http.test.js                the streamable HTTP transport, over a real socket
+  http.test.js                the streamable HTTP transport and the workers, over a real socket
 wiki/                         human documentation
 .agents/                      this set - rules, agent wiki, memory, indexes
 ```
@@ -63,6 +63,7 @@ wiki/                         human documentation
 | `PORT` | `src/index.js` | HTTP port, default `3000`. |
 | `HOST` | `src/index.js` | Interface the HTTP transport binds, default `0.0.0.0` — every IPv4 interface. |
 | `MCP_ALLOWED_HOSTS` | `src/app.js` | Comma-separated `Host` allow-list for the HTTP transport. **Unset means none is applied**; the server says so on startup. |
+| `MCP_CLUSTER_WORKERS` | `src/index.js` | HTTP worker count, default one per CPU. **`1` forks nothing.** stdio never forks. |
 
 There is no `API_KEY`. Nothing here reaches an external service. `MCP_ALLOWED_HOSTS` is
 a filter, not a credential — it decides which `Host` values are answered, not who is
@@ -95,7 +96,8 @@ Eleven tools today. None of them takes an argument.
   because it is not markdown. Nothing else in the set opts out.
 * **A fresh `McpServer` per HTTP request.** `src/app.js` builds and closes one per
   request because `McpServer` holds per-connection state. Do not hoist it to module
-  scope.
+  scope, and note that with workers on, that request may be answered by any of N
+  separate processes.
 * **`src/app.js` must not call `listen()`.** It is a factory; `src/index.js` owns the
   port and the worker count. A file that both builds and binds cannot be tested without
   opening one.

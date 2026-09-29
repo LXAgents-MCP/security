@@ -123,3 +123,74 @@ and on the 405, because those three take different paths through the stack.
 `npm ci` and the lockfile check are in the task-3 commit; the plan's
 [verification checklist](../plans/verification.md) is walked there, once, over the tree
 that finally merges.
+
+### Task 3 — `feat/cluster-workers`
+
+`src/index.js` grows a `node:cluster` primary. It forks `MCP_CLUSTER_WORKERS` processes —
+`os.availableParallelism()` by default — and each worker binds the same `PORT` through
+the cluster's shared handle, so the kernel's round-robin scheduler does the distribution.
+No `SO_REUSEPORT` is set by hand and no sticky-session logic is written, because the
+scheduler already has the information such a scheme would have to reconstruct.
+
+`MCP_CLUSTER_WORKERS=1` means **no fork at all**. That is what makes this task bisectable
+against task 2: the same code answers with and without workers, so a difference between
+them is a difference in the fork rather than in the transport.
+
+The primary binds nothing, so the `serving over http` line is printed once per worker and
+a container's log describes ports that are genuinely open, from the processes that opened
+them. A worker whose primary is gone exits on `disconnect` — without that handler it would
+hold the port for whoever starts next, and the suite would fail on its *second* run with
+`EADDRINUSE` rather than on this one.
+
+| Point | Tests | Pass | Fail |
+|---|---|---|---|
+| Baseline | 30 | 30 | 0 |
+| After task 2 | 34 | 34 | 0 |
+| After this task | 42 | 42 | 0 |
+
+Eight new tests, all in `test/http.test.js`. Six are ordinary; two are worth naming.
+
+**`no worker outlives a primary that was killed outright`** is the one that catches a
+missing `disconnect` handler, and its failure mode is deceptive: the orphan outlives the
+run that created it, so the suite that would have caught it has already reported success.
+It SIGKILLs the primary — which cannot be caught, handled, or forwarded, so the workers
+learn about it only through the IPC channel that closes with it — waits, and then proves
+the port is free two ways: the request is refused, *and* something else can bind it
+again. A request that merely timed out would pass the first check alone.
+
+**`a worker that dies is replaced`** reads the worker pids from `/proc` rather than from
+a log line or a response field, because the startup line is pinned by other tests and
+adding a pid to it, or to the health check, would change a surface this task was not asked
+to change. It is Linux-only and skips elsewhere, which is stated in the test rather than
+papered over with a weaker proxy. It also caught a bug while being written:
+`child.kill(signal, pid)` takes **no pid argument**, so passing one silently killed the
+primary instead of the worker — which looks exactly like a server that ignores its
+workers dying.
+
+### Two things the verification checklist asked for that this environment will not give
+
+**The crash-loop backstop is not exercised.** The plan wanted proof that a primary whose
+workers cannot start reports it and stops rather than respawning forever. The obvious
+trigger — occupy the port first — does not work here. Measured, with the blocker held
+open and answering on every path: a child process binds the same `127.0.0.1` port
+**successfully**, while the parent keeps serving, and the child's listen callback fires.
+Two `node:http` servers in one process do collide with `EADDRINUSE` as expected; a child
+binding a port its parent holds does not. So the test premise is unsupported here rather
+than the code being wrong, and a test whose premise is unsupported hangs instead of
+failing. It was removed rather than left in place. The backstop (`starts > count * 10`,
+then report and exit 1) is implemented and reviewed; it is **not** covered by the suite.
+
+**Worker memory does grow, and did so before this task.** 1200 sequential tool calls:
+
+| | after startup | 300 | 600 | 900 | 1200 |
+|---|---|---|---|---|---|
+| `node:http`, before this work | 89 MB | 135 MB | 203 MB | 205 MB | 267 MB |
+| express + cluster, after | 95 MB | 129 MB | 184 MB | 206 MB | 210 MB |
+
+The new code grows less and **flattens**; the old code grows more and had not flattened
+when the sample ended. The growth is in the per-request `McpServer` +
+`StreamableHTTPServerTransport` construction the SDK requires, which is the same in both
+versions — so this is a **pre-existing characteristic surfaced by measurement, not a
+regression from the migration**. It is left as a finding rather than a fix, because
+fixing it means changing the stateless per-request design that this repository documents
+as a security property. It is worth its own task.

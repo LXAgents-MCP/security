@@ -1,6 +1,6 @@
 # Environment Variables
 
-Four variables, all optional. The server starts with none of them set and answers
+Five variables, all optional. The server starts with none of them set and answers
 every request.
 
 | Variable | Default | Read by | Effect |
@@ -9,6 +9,7 @@ every request.
 | `PORT` | `3000` | `src/index.js` | The port the HTTP transport listens on. Ignored on stdio. |
 | `HOST` | `0.0.0.0` | `src/index.js` | The interface the HTTP transport binds. Ignored on stdio. |
 | `MCP_ALLOWED_HOSTS` | *unset* | `src/app.js` | Comma-separated `Host` allow-list. **Unset means no allow-list is applied.** Read on the HTTP transport only. |
+| `MCP_CLUSTER_WORKERS` | *the CPU count* | `src/index.js` | How many HTTP workers to fork. **`1` means no fork at all** — one process, one listener. Read on the HTTP transport only; stdio never forks. |
 
 `0.0.0.0` is every IPv4 interface. It is **not** the dual-stack `::` that Node binds when
 no interface is named, so a client reaching the server over IPv6 needs `HOST=::`.
@@ -83,6 +84,36 @@ fails in `cmd.exe`, so the same script could not run on a stock Windows checkout
 the variable in `src/cli.js` keeps one mechanism for both platforms and adds no
 dependency. `MCP_TRANSPORT=http node src/index.js` still works wherever the shell
 supports it; it is the npm script, not the server, that avoids the prefix.
+
+## `MCP_CLUSTER_WORKERS`
+
+How many HTTP workers the primary forks. Each worker binds the same `PORT`; the kernel's
+shared handle and the round-robin scheduler distribute the connections.
+
+Unset, the count is `os.availableParallelism()` — the CPUs this process was actually
+given, not a constant, so a two-CPU container gets two workers and a laptop does not get
+eight.
+
+```bash
+# one worker per CPU (the default)
+npm run start:http
+
+# no fork at all: one process, one listener, the pre-cluster behaviour
+MCP_CLUSTER_WORKERS=1 npm run start:http
+
+# four workers on a machine that reports two CPUs
+MCP_CLUSTER_WORKERS=4 npm run start:http
+```
+
+**`1` disables forking**, and that is the point of it rather than a special case: the
+same code answers with and without workers, so a difference between the two is a
+difference in the fork rather than in the transport.
+
+The primary forks workers and serves nothing itself, so the `serving over http` line is
+printed once per worker — the number of lines is the number of open ports in the log.
+The primary also replaces a worker that dies, and gives up rather than respawning into a
+crash loop nobody is watching. It has no flag in the CLI for the same reason `HOST` has
+none: one transport, one reason to want a different value.
 
 ## Related pages
 
