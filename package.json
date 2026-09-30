@@ -1,6 +1,6 @@
 {
   "name": "@lxagents-mcp/security",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Read-only MCP server delivering the global security instruction set for python, javascript/typescript, and go.",
   "type": "module",
   "main": "src/index.js",

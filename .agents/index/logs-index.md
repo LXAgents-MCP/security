@@ -11,6 +11,7 @@ description: Release history of lxagents-security, newest version first - what c
 ## Versions
 
 | Version | Changelog | Summary |
+| `1.1.0` | [`../../wiki/logs/1/1/0/CHANGELOG.md`](../../wiki/logs/1/1/0/CHANGELOG.md) |  |
 |---|---|---|
 | `1.0.0` | [`../../wiki/logs/1/0/0/CHANGELOG.md`](../../wiki/logs/1/0/0/CHANGELOG.md) | The single path-taking tool is replaced by eleven derived tools, one per file in the set; no tool takes an argument; the licence is no longer served. |
 | `0.1.0` | [`../../wiki/logs/0/1/0/CHANGELOG.md`](../../wiki/logs/0/1/0/CHANGELOG.md) | Per-file tool layer with zod schemas and an optional unified API key; agent instruction system adopted. |
