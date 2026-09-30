@@ -38,6 +38,13 @@ curl -s http://localhost:3000/healthz
 running, healthy, and connectable from nowhere. `EXPOSE 3000` documents the port; it
 does not publish it, which is the part that surprises people.
 
+**One worker per CPU.** On HTTP the server forks `os.availableParallelism()` workers and
+every one of them binds port 3000 through the cluster's shared handle, so `-p 3000:3000`
+publishes all of them at once and nothing else is needed. `MCP_CLUSTER_WORKERS=1` gives a
+single process instead, which is what you want when a memory limit, rather than a CPU
+limit, is the constraint. The `serving over http` line is printed once per worker, so
+its repeat count in the log is the number of workers actually listening.
+
 Set `MCP_ALLOWED_HOSTS` when the container is reachable from anywhere but this machine —
 **the allow-list is off unless you set it**, and the server says so on startup:
 
@@ -120,4 +127,4 @@ checkout.
 
 - [Local setup](setup.md) — running the server without a container.
 - [Architecture](../information/architecture.md) — the entry point and the two transports.
-- [Environment variables](env.md) — `MCP_TRANSPORT`, `PORT`, `HOST`, `MCP_ALLOWED_HOSTS`.
+- [Environment variables](env.md) — `MCP_TRANSPORT`, `PORT`, `HOST`, `MCP_ALLOWED_HOSTS`, `MCP_CLUSTER_WORKERS`.

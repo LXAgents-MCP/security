@@ -20,7 +20,8 @@ Environment
   MCP_TRANSPORT    stdio (default) or http
   PORT             HTTP port, default 3000
   HOST             HTTP interface, default 0.0.0.0
-  MCP_ALLOWED_HOSTS  comma-separated Host allow-list; unset means none is applied`;
+  MCP_ALLOWED_HOSTS  comma-separated Host allow-list; unset means none is applied
+  MCP_CLUSTER_WORKERS  HTTP worker count, default one per CPU; 1 forks nothing`;
 
 const [command, ...rest] = process.argv.slice(2);
 
