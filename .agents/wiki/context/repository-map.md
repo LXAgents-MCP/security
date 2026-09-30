@@ -31,6 +31,7 @@ content/                      the published security set - the product
   references/                 ten guides, <language>-<framework>-<stack>-security.md
 src/
   index.js                    entry point; picks stdio or streamable HTTP, owns the HTTP server
+  app.js                      the express application as a pure factory - builds, never listens
   server.js                   builds the McpServer and registers the generated surface; exports listTools()
   cli.js                      the CLI: help, version, tools, serve
   version.js                  ROOT, CONTENT_DIR, and the version out of package.json
@@ -61,7 +62,7 @@ wiki/                         human documentation
 | `MCP_TRANSPORT` | `src/index.js` | `stdio` (default) or `http` (Streamable HTTP on `/mcp`). |
 | `PORT` | `src/index.js` | HTTP port, default `3000`. |
 | `HOST` | `src/index.js` | Interface the HTTP transport binds, default `0.0.0.0` — every IPv4 interface. |
-| `MCP_ALLOWED_HOSTS` | `src/index.js` | Comma-separated `Host` allow-list for the HTTP transport. **Unset means none is applied**; the server says so on startup. |
+| `MCP_ALLOWED_HOSTS` | `src/app.js` | Comma-separated `Host` allow-list for the HTTP transport. **Unset means none is applied**; the server says so on startup. |
 
 There is no `API_KEY`. Nothing here reaches an external service. `MCP_ALLOWED_HOSTS` is
 a filter, not a credential — it decides which `Host` values are answered, not who is
@@ -92,9 +93,12 @@ Eleven tools today. None of them takes an argument.
   hand-rolled single-line parser, not a YAML dependency.
 * **Nothing is unserved except by not being `.md`.** `content/LICENSE.txt` has no tool
   because it is not markdown. Nothing else in the set opts out.
-* **A fresh `McpServer` per HTTP request.** `src/index.js` builds and closes one per
+* **A fresh `McpServer` per HTTP request.** `src/app.js` builds and closes one per
   request because `McpServer` holds per-connection state. Do not hoist it to module
   scope.
+* **`src/app.js` must not call `listen()`.** It is a factory; `src/index.js` owns the
+  port and the worker count. A file that both builds and binds cannot be tested without
+  opening one.
 * **An unset `MCP_ALLOWED_HOSTS` is the guard being off.** Not "allow nothing". The
   startup line says `MCP_ALLOWED_HOSTS is unset` when there is no list, and `HOST`
   defaults to `0.0.0.0`, so the unguarded state is the default one. Do not "fix" this by

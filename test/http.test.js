@@ -6,7 +6,9 @@ import { fileURLToPath } from "node:url";
 import { after, test } from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { BODY_LIMIT_BYTES } from "../src/app.js";
 import { SERVER_ID, createServer } from "../src/server.js";
 
 /**
@@ -541,5 +543,81 @@ test("an allow-list of nothing but separators still counts as unset", async () =
   await withServer({ env: { MCP_ALLOWED_HOSTS: " , , " } }, async ({ url, output }) => {
     assert.equal((await requestWithHost({ url, host: "anything.test" })).status, 200);
     assert.match(output(), /MCP_ALLOWED_HOSTS is unset/);
+  });
+});
+
+/* -------------------------------------------------------------------------- *
+ * The body limit, and the framework it replaced.
+ * -------------------------------------------------------------------------- */
+
+test("the body limit is the 4 MB it was before express", () => {
+  // Pinned as a number, not just as a relation to whatever the constant now says. A
+  // limit that quietly became 64 MB would keep every boundary test in this file
+  // passing, and the number is a documented property of the transport rather than an
+  // implementation detail.
+  assert.equal(BODY_LIMIT_BYTES, 4 * 1024 * 1024);
+});
+
+test("a body over the limit is refused, and says so in the JSON-RPC envelope", async () => {
+  await withServer({}, async ({ url }) => {
+    // Valid JSON, valid MCP, simply too large: the only thing wrong with it is its
+    // size, so a refusal here is the limit and not a parse failure.
+    const oversized = JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: { name: "skill", arguments: {}, padding: "x".repeat(BODY_LIMIT_BYTES) },
+    });
+    assert.ok(oversized.length > BODY_LIMIT_BYTES, "the payload must actually exceed the limit");
+
+    const response = await fetch(`${url}/mcp`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: oversized,
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 400);
+    assert.equal(body.jsonrpc, "2.0");
+    assert.equal(body.error.code, -32700);
+  });
+});
+
+test("malformed JSON is refused with exactly the same answer as a body that is too large", async () => {
+  // Not tidiness. The hand-rolled reader this replaced threw one failure for both
+  // cases, so a client that learned to expect 400/-32700 on a malformed body was
+  // never taught anything different for an oversized one. Collapsing them keeps that
+  // promise; splitting them would be a behaviour change nobody asked for.
+  await withServer({}, async ({ url }) => {
+    const response = await fetch(`${url}/mcp`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{ this is not json",
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 400);
+    assert.equal(body.error.code, -32700);
+    assert.equal(body.error.message, "Parse error: request body is not valid JSON");
+  });
+});
+
+test("no response advertises that the server is running express", async () => {
+  await withServer({}, async ({ url }) => {
+    // Checked on a served route and on the catch-all, because the 404 is produced by
+    // middleware rather than by a route and could plausibly have taken a different
+    // path through the stack. `X-Powered-By` hands an unauthenticated caller the
+    // framework and its version, which is a free upgrade suggestion.
+    const health = await fetch(`${url}/healthz`);
+    const missing = await fetch(`${url}/nope`);
+    const refused = await fetch(`${url}/mcp`);
+
+    for (const response of [health, missing, refused]) {
+      assert.equal(
+        response.headers.get("x-powered-by"),
+        null,
+        `X-Powered-By leaked on ${response.url}`
+      );
+    }
   });
 });

@@ -81,3 +81,45 @@ Registered in [`.agents/index/memory-index.md`](../../index/memory-index.md) in 
 commit.
 
 Task 2 branches from this branch and adds its own entry here in its own commit.
+
+### Task 2 — `feat/express-transport`
+
+`node:http` is gone. `src/app.js` is new and holds the whole HTTP surface as a pure
+factory: `POST /mcp`, `GET /healthz`, a JSON-RPC 405 for any other method on `/mcp`, a
+JSON-RPC 404 for everything else, and a four-argument error handler that answers an
+oversized body and a malformed one with the same 400 / `-32700`. `src/index.js` keeps
+the transport switch, the port, the interface, the startup lines, and the three-step
+shutdown — and calls `createApp().listen(port, host)`.
+
+**The shim is deleted.** The old `node:http` server had no `res.status().json()` to give
+`hostHeaderValidation`, so it grafted those two methods onto the real response and
+inferred refusal from whether `json` had been called. Express has both, so the SDK
+middleware is mounted natively and the shim has no caller left.
+
+Recorded in
+[`../decisions/express-for-http-transport.md`](../decisions/express-for-http-transport.md),
+which also records the semantics that are preservation rather than rewrite: the guard is
+**not mounted at all** when `MCP_ALLOWED_HOSTS` is unset, empty, or separators-only, and
+the `-32700` collapse is kept deliberately.
+
+`express@^5.2.1` was already resolved in the lockfile transitively through the SDK. The
+diff is the direct-dependency marking and nothing else — no version moved.
+
+**One unrelated fix rode along.** `src/cli.js`'s `--help` block ended with
+`unset means none is applied\`` — an unbalanced backtick that swallowed the end of the
+template literal and printed the rest of the source on `--help`. The new line added
+below it needs a closing backtick, so the stray one had to go.
+
+| Point | Tests | Pass | Fail |
+|---|---|---|---|
+| Baseline | 30 | 30 | 0 |
+| After this task | 34 | 34 | 0 |
+
+Four new tests, all in `test/http.test.js`: the body limit is the 4 MB it was; an
+oversized body is refused in the JSON-RPC envelope; malformed JSON gets **exactly** the
+same answer; and no response carries `X-Powered-By` — checked on a route, on the 404,
+and on the 405, because those three take different paths through the stack.
+
+`npm ci` and the lockfile check are in the task-3 commit; the plan's
+[verification checklist](../plans/verification.md) is walked there, once, over the tree
+that finally merges.
