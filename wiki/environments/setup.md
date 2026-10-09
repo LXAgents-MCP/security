@@ -24,14 +24,16 @@ Two dependencies: `@modelcontextprotocol/sdk` and `zod`.
 There is also a container image, for a host that cannot run Node at all — see
 [`docker.md`](docker.md). It is not built by `npm test` and has never been built.
 
-## No authentication
+## Authentication: HTTP only
 
-Nothing here reaches an external service, so there is no key. The server starts, lists
-its eleven tools, and answers every request with nothing configured.
+Nothing here reaches an external service, so no tool needs a key, and **stdio needs no token
+and no configuration**: the server starts, lists its eleven tools, and answers.
 
-There are four optional environment variables — `MCP_TRANSPORT`, `PORT`, `HOST`, and
-`MCP_ALLOWED_HOSTS` — and none of them is required. `MCP_ALLOWED_HOSTS` is a `Host`
-allow-list for the HTTP transport and is **off unless you set it**; the server says so
+**The HTTP transport requires `MCP_AUTH_TOKEN`**, a bearer token of at least 32 characters. It
+will not start without one, and every request except `GET /healthz` must carry it as
+`Authorization: Bearer <token>`. The other environment variables — `MCP_TRANSPORT`, `PORT`,
+`HOST`, `MCP_ALLOWED_HOSTS` and `MCP_CLUSTER_WORKERS` — are optional. `MCP_ALLOWED_HOSTS` is a
+`Host` allow-list for the HTTP transport and is **off unless you set it**; the server says so
 on startup. Set it before exposing the port anywhere but your own machine. Full list:
 [`env.md`](env.md).
 
@@ -128,7 +130,8 @@ For a remote connector, point the client at `https://<host>/mcp`, including the
 npm start
 lxagents-security serve --stdio
 
-# streamable HTTP
+# streamable HTTP - needs a token, or it exits 1 and says why
+export MCP_AUTH_TOKEN="$(openssl rand -hex 32)"
 npm run start:http
 lxagents-security serve --http --port 3000
 ```

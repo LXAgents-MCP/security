@@ -56,7 +56,21 @@ npm start
 On the stdio default, no key, no environment variable, no configuration. The server
 starts and answers with nothing set. No tool reads a credential, on any transport.
 
+**The HTTP transport is different: it requires a bearer token.** It will not start without
+`MCP_AUTH_TOKEN` (at least 32 characters), and every request except `GET /healthz` must carry
+`Authorization: Bearer <token>`. stdio, which a client spawns on its own machine, needs none.
+
+```bash
+export MCP_AUTH_TOKEN="$(openssl rand -hex 32)"   # keep it; clients need the same value
+npm run start:http
+```
+
 ### Security note — the HTTP transport
+
+The token gates who may use a deployed instance, not the text: the set is public, so a token
+does not make it confidential. Put TLS in front, because a bearer token sent over plain `http`
+can be read on the path. Every client holds the same token, so rotate it by changing the
+variable and restarting. Reference: [`wiki/environments/env.md`](wiki/environments/env.md).
 
 `MCP_ALLOWED_HOSTS` is a comma-separated allow-list of `Host` header values, and **an
 empty value means the guard is off** — not "allow everything on the list", which is the
@@ -95,10 +109,12 @@ Every `.md` file here is a tool. `LICENSE.txt` is not, and is never served.
 | Transport | How |
 |---|---|
 | Local stdio | `command: node`, `args: ["src/index.js"]`, `cwd:` this checkout |
-| Local HTTP | `npm run start:http`, then `http://localhost:3000/mcp` |
-| Remote | Settings → Connectors → Add custom connector → `https://<host>/mcp` |
+| Local HTTP | `MCP_AUTH_TOKEN=<32+ chars> npm run start:http`, then `http://localhost:3000/mcp` with an `Authorization: Bearer <token>` header |
+| Remote | `https://<host>/mcp` with the same header — a `.mcp.json` `headers` entry, `claude mcp add --transport http … --header`, the Agent SDK or the Inspector can send it |
 
-The `/mcp` path is not optional on either HTTP form.
+The `/mcp` path is not optional on either HTTP form. Without the header every request except
+`GET /healthz` is a `401`. A client that can only authenticate through OAuth cannot use a
+static token.
 
 ## Documentation
 

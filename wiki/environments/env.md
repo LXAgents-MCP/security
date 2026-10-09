@@ -1,7 +1,8 @@
 # Environment Variables
 
-Five variables, all optional. The server starts with none of them set and answers
-every request.
+Six variables. **Five are optional, and stdio needs none of them.** The sixth,
+`MCP_AUTH_TOKEN`, is a secret and is **required by the HTTP transport**: without it the
+HTTP server does not start.
 
 | Variable | Default | Read by | Effect |
 |---|---|---|---|
@@ -9,6 +10,7 @@ every request.
 | `PORT` | `3000` | `src/index.js` | The port the HTTP transport listens on. Ignored on stdio. |
 | `HOST` | `0.0.0.0` | `src/index.js` | The interface the HTTP transport binds. Ignored on stdio. |
 | `MCP_ALLOWED_HOSTS` | *unset* | `src/app.js` | Comma-separated `Host` allow-list. **Unset means no allow-list is applied.** Read on the HTTP transport only. |
+| `MCP_AUTH_TOKEN` | **none - required for HTTP** | `src/auth.js` | The bearer token every HTTP request except `GET /healthz` must carry. At least 32 characters. **HTTP will not start without it.** stdio never reads it. |
 | `MCP_CLUSTER_WORKERS` | *the CPU count* | `src/index.js` | How many HTTP workers to fork. **`1` means no fork at all** — one process, one listener. Read on the HTTP transport only; stdio never forks. |
 
 `0.0.0.0` is every IPv4 interface. It is **not** the dual-stack `::` that Node binds when
@@ -40,13 +42,41 @@ Unset is a skipped check rather than a guessed one, because a wrong allow-list s
 refusing every request is a worse failure than an absent one, and the set is public
 markdown either way.
 
-## There is no `API_KEY`
+## `MCP_AUTH_TOKEN`
 
-The template this repository was scaffolded from took one key for tools that reached an
-external service. Nothing here reaches an external service, so there is no key, and no
-tool reads a credential.
+The transport decides. A server a client spawns is a pipe on the client's own machine, so
+there is nobody to authenticate; a server on a port is reachable by anyone who can open a
+socket, so every request must prove the caller holds the token. An optional token would mean
+a deployment that forgot to set it ran open and said nothing, so instead the process refuses
+to start: one line on stderr naming the variable, and exit code `1`. `createApp` refuses to
+build without it too, so the check cannot be skipped by calling the app directly.
 
-If a future tool needs one, the contract for that is
+```bash
+export MCP_AUTH_TOKEN="$(openssl rand -hex 32)"    # 64 hex characters; keep it, clients need it
+npm run start:http
+```
+
+* **Length.** Under 32 characters is refused at startup, so a value like `test` is found by
+  you and not by a scanner. Surrounding whitespace is dropped, because a token read out of a
+  file or an `env_file` often ends in a newline and an HTTP header cannot.
+* **Sending it.** `Authorization: Bearer <token>` on every request. A missing header and a
+  wrong token are both a `401` with `WWW-Authenticate: Bearer`; the second also says
+  `error="invalid_token"`. There is no query-string form, because a URL is logged.
+* **One token, shared.** Every client holds the same value, so there is no per-client
+  identity and no revoking one client alone. Rotate it by changing the variable and
+  restarting; the server is stateless, so a restart drops nothing.
+* **Never logged.** The startup line says a token is required and never what it is, and a
+  rejected token is not echoed. Keep it out of the image, the repository and the command
+  line: pass it from the environment, an `env_file`, or the host's secret store.
+* **`GET /healthz` is the one open route**, so an orchestrator's probe needs no token. It
+  returns `{ status, server, version }` and nothing else.
+* **Put TLS in front.** A bearer token sent over plain `http` can be read by anyone on the
+  path. This server does not terminate TLS.
+
+The token gates the *service*, not the *text*: the set is public, so it does not become
+confidential. No tool reads a credential, and none takes one as an argument.
+
+If a future *tool* needs a credential, the contract for that is
 [`../../../.agents/rules/secrets.md`](../../../.agents/rules/secrets.md): check
 `process.env` **inside the handler**, never at module scope, and never as a condition on
 whether the tool is registered.
@@ -57,7 +87,7 @@ whether the tool is registered.
 # stdio (default)
 npm start
 
-# streamable HTTP on 3000
+# streamable HTTP on 3000 (MCP_AUTH_TOKEN must be set)
 npm run start:http
 
 # streamable HTTP on another port

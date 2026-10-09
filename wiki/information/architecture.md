@@ -1,11 +1,12 @@
 # Architecture
 
-Five source files and one generated tool surface. There is no build step.
+Six source files and one generated tool surface. There is no build step.
 
 ```
 src/
   index.js     entry point: picks a transport, and owns the cluster
   app.js       the express application, as a pure factory — builds, never listens
+  auth.js      the bearer token: the strength check, and the middleware that enforces it
   server.js    builds the McpServer, registers every tool, exports listTools()
   cli.js       the CLI: help, version, tools, serve
   version.js   reads the version out of package.json, and holds ROOT and CONTENT_DIR
@@ -148,15 +149,31 @@ no caller, where a future reader could not tell whether it was load-bearing.
 
 ## Authentication
 
-There is none. No tool in this repository reads a credential, and none opens a socket.
-The HTTP transport's `MCP_ALLOWED_HOSTS` is a filter, not a credential: it decides which
-`Host` values are answered at all, and it says nothing about who is asking.
+**The HTTP transport requires a bearer token, and stdio does not.** No tool in this repository
+reads a credential, and none takes one as an argument; the token belongs to the transport.
+
+`src/auth.js` reads `MCP_AUTH_TOKEN` and `src/app.js` mounts its middleware after the `Host`
+allow-list and ahead of the body parser and every route, with `GET /healthz` the one
+exemption. `createApp` throws without a usable token, and the primary in `src/index.js`
+checks first, so a missing one is a single line and exit code `1` rather than the same line
+from each worker and a respawn loop. The stdio path never reads the variable. The comparison is
+constant-time over SHA-256 digests, the token is never logged or echoed, and there is no
+query-string form and no flag that turns the check off.
+
+The token gates who may use a deployed instance, not the text: the set is public. It is one
+shared value, so there is no per-client identity, and it is only as private as the connection
+it travels on, so TLS belongs in front. The reasoning is in the decision record
+[`.agents/memory/decisions/http-bearer-token.md`](../../.agents/memory/decisions/http-bearer-token.md).
+
+`MCP_ALLOWED_HOSTS` is a separate control: a filter on which `Host` values are answered at all,
+and it says nothing about who is asking.
 
 The template this repository was scaffolded from took one server-wide `API_KEY` and read
 it inside the handler of each tool that needed it. That pattern is still recorded in
 [`.agents/rules/secrets.md`](../../../.agents/rules/secrets.md) for a tool that does
 need one — the requirement is to read it at call time rather than at import, and never to
-make registration depend on it.
+make registration depend on it. The transport token is read at startup instead, because it
+has to fail closed before anything is served.
 
 ## The parity guarantee
 

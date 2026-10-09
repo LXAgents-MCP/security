@@ -27,12 +27,19 @@ be reproducible, and `latest` is the one tag that cannot be.
 
 ## Run — HTTP
 
-The image sets `MCP_TRANSPORT=http`, so nothing has to be overridden:
+The image sets `MCP_TRANSPORT=http`, so the transport does not have to be overridden — but
+HTTP **requires `MCP_AUTH_TOKEN`**, so the token does have to be passed:
 
 ```bash
-docker run --rm -p 3000:3000 lxagents-security:1.1.0
+docker run --rm -p 3000:3000 -e MCP_AUTH_TOKEN lxagents-security:1.1.0
 curl -s http://localhost:3000/healthz
 ```
+
+`-e MCP_AUTH_TOKEN` with no value passes the variable through from your shell; `--env-file` or
+your host's secret store work too. Without it the container exits with code `1` and one line
+saying why — it does not start open. `/healthz` is the one route that needs no token. Never bake
+the value into the image with an `ENV` line: it would ship to everyone who pulls it. The stdio
+form below needs no token.
 
 **`-p` is what makes it reachable**, and forgetting it produces a container that is
 running, healthy, and connectable from nowhere. `EXPOSE 3000` documents the port; it
@@ -50,6 +57,7 @@ Set `MCP_ALLOWED_HOSTS` when the container is reachable from anywhere but this m
 
 ```bash
 docker run --rm -p 3000:3000 \
+  -e MCP_AUTH_TOKEN \
   -e MCP_ALLOWED_HOSTS=security.example.com \
   lxagents-security:1.1.0
 ```
@@ -127,4 +135,4 @@ checkout.
 
 - [Local setup](setup.md) — running the server without a container.
 - [Architecture](../information/architecture.md) — the entry point and the two transports.
-- [Environment variables](env.md) — `MCP_TRANSPORT`, `PORT`, `HOST`, `MCP_ALLOWED_HOSTS`, `MCP_CLUSTER_WORKERS`.
+- [Environment variables](env.md) — `MCP_TRANSPORT`, `PORT`, `HOST`, `MCP_ALLOWED_HOSTS`, `MCP_AUTH_TOKEN`, `MCP_CLUSTER_WORKERS`.

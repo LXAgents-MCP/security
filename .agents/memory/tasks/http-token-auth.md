@@ -67,3 +67,43 @@ The release log names that under **Consumers must**.
 Landed: this record and its row in `memory-index.md`. The `PR` column is filled by task 3, not
 here. Nothing outside `.agents/` changes in this task. Task 2 depends on nothing from this entry
 except the plan above.
+
+### Task 2 — feat/http-token-auth
+
+Landed. HTTP requires `Authorization: Bearer <MCP_AUTH_TOKEN>` on every route except
+`GET /healthz`, and refuses to start without a token of at least 32 characters. stdio is
+unchanged and never reads the variable. `npm test` runs 58 tests, up from 42, all passing.
+
+**Code.** New `src/auth.js`, the same module as in `shared-instruction` apart from one header
+comment, because this repository's single entry point serves both transports. `src/app.js`
+mounts the middleware after the `Host` allow-list and before the body parser, with the exact
+`GET /healthz` exemption, and `createApp` throws without a usable token. `src/index.js` checks in
+the primary before forking and sets the exit code rather than calling `process.exit`.
+
+**Tests.** Every existing HTTP test now runs with a token. Sixteen new ones cover missing, wrong,
+malformed and correct credentials, no route being revealed, the check running before the body is
+parsed, the exact `/healthz` exemption, the token never reaching the output, the refusal to start
+with one worker and with several (once, and not a respawn loop), and stdio ignoring even an
+unusable value. Four controls were each broken on purpose and the matching test failed every time:
+the comparison made always-true, the check moved after the body parser, the primary's check
+removed, and the `/healthz` exemption loosened to a prefix. The existing "reads no credential"
+test is reworded to say the tool surface, which is what it checks; the server now reads one.
+
+**Docs.** README, Dockerfile comments, setup, environment, Docker and architecture pages, the
+repository map and the repository state now say what is true. The container image defaults to
+HTTP, so the documented `docker run` now needs `MCP_AUTH_TOKEN`. The decision is recorded in
+`decisions/http-bearer-token.md`.
+
+**Left stale on purpose — instruction files, for the owner to decide.** The discovery protocol
+forbids editing these unprompted, so each is reported in the pull request instead:
+
+- `.agents/rules/secrets.md`: it says no credential is read and that a credential is read inside
+  the handler at call time. The transport token is the first credential and is read at startup,
+  on purpose, so that the server can fail closed. The rule needs a section for it.
+- `.agents/rules/repository.md`: the HTTP run command in its table now needs `MCP_AUTH_TOKEN`.
+
+**Not verified.** The Docker image was not built, as before. Nothing was deployed. The
+`${MCP_AUTH_TOKEN}` header expansion and the `claude mcp add --header` form are written from the
+clients' documented behaviour and were not run against a client here.
+
+Left for task 3: version, changelog, the logs index, the `PR` column and closing this record.
