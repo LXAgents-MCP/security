@@ -7,7 +7,7 @@ description: Current known state of lxagents-security - the derived per-file too
 
 ## What this repository is right now
 
-`lxagents-security` is a working dual-purpose MCP server and CLI at version `1.0.0`. It
+`lxagents-security` is a working dual-purpose MCP server and CLI at version `2.0.0`. It
 serves the **global security set** read-only. It is no longer a template: `PROMPT.md` and
 `template-mode.md` are gone, and the tool surface is derived from the set.
 
