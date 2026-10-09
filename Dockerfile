@@ -38,7 +38,7 @@ EXPOSE 3000
 # HTTP is the default here, so a container that is run rather than spawned is
 # reachable:
 #
-#   docker run --rm -p 3000:3000 -e MCP_AUTH_TOKEN lxagents-security:0.1.0
+#   docker run --rm -p 3000:3000 -e MCP_AUTH_TOKEN lxagents-security:2.0.0
 #
 # HTTP refuses to start without MCP_AUTH_TOKEN (at least 32 characters): the container
 # exits 1 with a line saying why, and does not run open. The token is passed at run time and
@@ -48,7 +48,7 @@ EXPOSE 3000
 # stdio is one environment variable away, and the image serves both from the
 # same entry point, because they differ only in which transport is selected:
 #
-#   docker run --rm -i -e MCP_TRANSPORT=stdio lxagents-security:0.1.0
+#   docker run --rm -i -e MCP_TRANSPORT=stdio lxagents-security:2.0.0
 #
 # For stdio, `-i` is not optional. Without it Docker does not attach stdin, the
 # server sees closed input, and it exits at once - which reads as a broken image

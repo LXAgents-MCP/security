@@ -107,3 +107,17 @@ forbids editing these unprompted, so each is reported in the pull request instea
 clients' documented behaviour and were not run against a client here.
 
 Left for task 3: version, changelog, the logs index, the `PR` column and closing this record.
+
+### Task 3 — release/2.0.0
+
+Landed. The version is `2.0.0`, approved by the owner: a client of a deployed HTTP instance that
+sends no token now gets a `401`, the new version will not boot without `MCP_AUTH_TOKEN`, and the
+container image defaults to HTTP, so its documented `docker run` now needs the variable.
+`package.json` and the lockfile carry it, `wiki/logs/2/0/0/CHANGELOG.md` records it with the
+**Clients must** steps, and `.agents/index/logs-index.md` has its row. The `1.1.0` row in that
+index sat above the table's separator line, so the table did not render; it is moved below it with
+a summary. Image tags in the docs and the Dockerfile comments move to `2.0.0`. No git tag was
+created; a tag carries a version too and needs its own approval.
+
+The `PR` column and the closing of this record follow once the pull requests exist, in their own
+commit on this branch. Nothing is stacked on this branch, so that commit invalidates nothing.
