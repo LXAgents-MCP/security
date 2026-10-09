@@ -58,10 +58,13 @@ Node.js 20+, ESM, no build step. One runtime dependency:
 
 ## What is not built
 
-* The HTTP transport is stateless and unauthenticated. `MCP_ALLOWED_HOSTS` filters
-  which `Host` values are answered; it says nothing about who is asking. `HOST` defaults
-  to `0.0.0.0`, so the port is open on every interface unless the operator narrows it,
-  and the allow-list is off unless the operator sets it.
+* The HTTP transport is stateless and requires a bearer token: `MCP_AUTH_TOKEN`, at least 32
+  characters, on every route except `GET /healthz`, and the process will not start without it.
+  stdio never reads it. See `../tasks/http-token-auth.md`. `MCP_ALLOWED_HOSTS` filters which
+  `Host` values are answered; it says nothing about who is asking. `HOST` defaults to
+  `0.0.0.0`, so the port is open on every interface unless the operator narrows it, and the
+  allow-list is off unless the operator sets it. There is one shared token, no TLS and no rate
+  limiting in this process.
 * No CI workflow, no linter, no formatter.
 * `content/` is a copy. A change to the set belongs upstream in the workspace set first;
   this repository is a delivery surface for it, not its editor. One consequence is on

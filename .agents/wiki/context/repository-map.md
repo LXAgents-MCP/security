@@ -32,6 +32,7 @@ content/                      the published security set - the product
 src/
   index.js                    entry point; picks stdio or streamable HTTP, owns the cluster
   app.js                      the express application as a pure factory - builds, never listens
+  auth.js                     the bearer token: tokenProblem, configuredToken, requireBearerToken
   server.js                   builds the McpServer and registers the generated surface; exports listTools()
   cli.js                      the CLI: help, version, tools, serve
   version.js                  ROOT, CONTENT_DIR, and the version out of package.json
@@ -52,7 +53,7 @@ wiki/                         human documentation
 | `npm test` | `node --test`. The whole suite; there is no watch mode. |
 | `npm run cli -- tools` | Lists registered tools through the CLI surface. |
 | `npm start` | Serves over stdio. |
-| `npm run start:http` | Serves over streamable HTTP on `PORT` (default 3000). |
+| `MCP_AUTH_TOKEN=<32+ chars> npm run start:http` | Serves over streamable HTTP on `PORT` (default 3000). **No token, no start.** |
 | `npm run inspect` | MCP Inspector against the stdio server. |
 
 ## Environment variables
@@ -64,10 +65,15 @@ wiki/                         human documentation
 | `HOST` | `src/index.js` | Interface the HTTP transport binds, default `0.0.0.0` — every IPv4 interface. |
 | `MCP_ALLOWED_HOSTS` | `src/app.js` | Comma-separated `Host` allow-list for the HTTP transport. **Unset means none is applied**; the server says so on startup. |
 | `MCP_CLUSTER_WORKERS` | `src/index.js` | HTTP worker count, default one per CPU. **`1` forks nothing.** stdio never forks. |
+| `MCP_AUTH_TOKEN` | `src/auth.js`, checked in `src/index.js` | **A secret.** The bearer token every HTTP request except `GET /healthz` must carry; at least 32 characters; HTTP will not start without it; stdio never reads it. |
 
-There is no `API_KEY`. Nothing here reaches an external service. `MCP_ALLOWED_HOSTS` is
-a filter, not a credential — it decides which `Host` values are answered, not who is
-asking.
+There is no `API_KEY`: nothing here reaches an external service, and no tool reads a credential.
+`MCP_ALLOWED_HOSTS` is a filter, not a credential — it decides which `Host` values are answered,
+not who is asking; `MCP_AUTH_TOKEN` is what decides that. **HTTP tests need the token too:** the
+harness in `test/http.test.js` hands every child the variable and the SDK client the matching
+header, so a test that spawns the server any other way, or fetches `/mcp` raw, must do the same
+or it will read a `401` as a failure of the thing it is testing. Blank it
+(`MCP_AUTH_TOKEN: ""`) to test the refusal to start.
 
 ## The two surfaces
 
