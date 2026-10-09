@@ -5,20 +5,20 @@ description: Requiring a bearer token on the HTTP transport while stdio stays op
 
 # Task: require a token on the HTTP transport
 
-Three branches, stacked. **No version change until the owner approves one**, and so for the
-release log.
+Three branches, stacked, pull requests #8, #9 and #10, merged in that order by rebase with each
+branch deleted as it merged. **Status: done.** The version, `2.0.0`, was approved by the owner.
 
 ## The plan
 
 | # | Task | Branch | PR |
 |---|---|---|---|
-| 1 | The record | `chore/http-token-auth-plan` | |
-| 2 | Require a token on HTTP | `feat/http-token-auth` | |
-| 3 | Release | `release/{version}` | |
+| 1 | The record | `chore/http-token-auth-plan` | [#8](https://github.com/LXAgents-MCP/security/pull/8) |
+| 2 | Require a token on HTTP | `feat/http-token-auth` | [#9](https://github.com/LXAgents-MCP/security/pull/9) |
+| 3 | Release | `release/2.0.0` | [#10](https://github.com/LXAgents-MCP/security/pull/10) |
 
 Branches stack: task 1 from `master`, task `k` from task `k-1`. The `PR` column is filled by
 task 3, because pull request numbers do not exist until every branch is pushed and filling them
-in on branch 1 would force a rebase of the rest. The working plan is untracked, under
+in on branch 1 would force a rebase of the rest. It was filled once the pull requests existed. The working plan is untracked, under
 `.agents/plans/`, and is deleted when the work lands. Where the two disagree, this record wins.
 
 ## What this is
@@ -119,5 +119,5 @@ index sat above the table's separator line, so the table did not render; it is m
 a summary. Image tags in the docs and the Dockerfile comments move to `2.0.0`. No git tag was
 created; a tag carries a version too and needs its own approval.
 
-The `PR` column and the closing of this record follow once the pull requests exist, in their own
-commit on this branch. Nothing is stacked on this branch, so that commit invalidates nothing.
+The `PR` column was filled and this record closed in the commit that followed, once the pull
+requests existed. Nothing is stacked on this branch, so that commit invalidated nothing.
