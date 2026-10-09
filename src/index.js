@@ -9,6 +9,7 @@ import cluster from "node:cluster";
 import { availableParallelism } from "node:os";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { allowedHosts, createApp } from "./app.js";
+import { MIN_TOKEN_LENGTH, tokenProblem } from "./auth.js";
 import { SERVER_ID, createServer } from "./server.js";
 import { version } from "./version.js";
 
@@ -64,6 +65,12 @@ function startWorker() {
       `${SERVER_ID} ${version} serving over http on :${port}/mcp (${where})\n`
     );
 
+    // The token is required for the process to be here at all, so this line is a
+    // statement of fact and not a warning. It never carries the value.
+    process.stderr.write(
+      `${SERVER_ID} ${version} bearer token required on every route except GET /healthz.\n`
+    );
+
     // Said out loud, because the default is the unguarded one. Someone reading a
     // container's startup log is the only person who can act on it, and a control
     // that is off silently is worse than no control at all — it reads as present.
@@ -116,6 +123,25 @@ function startWorker() {
  * logged a listening line of its own would be claiming a port it does not hold.
  */
 function startPrimary() {
+  // Fail closed, before anything is forked. HTTP without a token is an open door on a
+  // network, and the only thing that can be done about it is not to start. Checked here
+  // as well as in `createApp` because here it is reported once: left to the workers, a
+  // missing token would be the same line printed by each of them and then a respawn loop
+  // through the crash limit.
+  //
+  // `exitCode` and a return, not `process.exit()`: nothing is listening yet, so the
+  // process ends on its own once the line is written, and the line is never cut off.
+  const problem = tokenProblem();
+  if (problem) {
+    process.stderr.write(
+      `${SERVER_ID} ${version} will not start the HTTP transport: ${problem}. ` +
+        `Set MCP_AUTH_TOKEN to a secret of at least ${MIN_TOKEN_LENGTH} characters, for example ` +
+        "the output of: openssl rand -hex 32. stdio needs no token.\n"
+    );
+    process.exitCode = 1;
+    return;
+  }
+
   const count = workerCount();
 
   // Read by the respawn handler below, and set by the signal handler further down, so
