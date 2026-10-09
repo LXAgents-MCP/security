@@ -8,8 +8,9 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { BODY_LIMIT_BYTES } from "../src/app.js";
-import { SERVER_ID, createServer } from "../src/server.js";
+import { BODY_LIMIT_BYTES, createApp } from "../src/app.js";
+import { MIN_TOKEN_LENGTH, configuredToken, tokenProblem } from "../src/auth.js";
+import { SERVER_ID, createServer, listTools } from "../src/server.js";
 
 /**
  * The Streamable HTTP transport, over a real socket.
@@ -23,6 +24,19 @@ import { SERVER_ID, createServer } from "../src/server.js";
  */
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+
+/**
+ * The token every server started by this file runs with, unless a test says otherwise.
+ *
+ * The HTTP transport will not start without one, and refuses every request that does not
+ * carry it. Defaulting it in `startServer` keeps the tests that are about something else -
+ * the workers, the body limit, the allow-list - about that thing rather than about
+ * authentication. Long enough to pass the length check, and obviously not a real secret.
+ */
+const TEST_TOKEN = "test-token-0123456789abcdef0123456789abcdef";
+
+/** An `Authorization` header carrying `token`. */
+const bearer = (token = TEST_TOKEN) => ({ authorization: `Bearer ${token}` });
 
 /**
  * How long to wait for the startup line.
@@ -83,6 +97,7 @@ async function startServer({ env = {} } = {}) {
       // Bound to loopback on purpose: this file must never open a port on every
       // interface of whatever machine runs the suite.
       HOST: "127.0.0.1",
+      MCP_AUTH_TOKEN: TEST_TOKEN,
       ...env,
     },
   });
@@ -201,13 +216,18 @@ async function withServer(options, run) {
 }
 
 /**
- * Connect an MCP client to a running server over a real socket.
+ * Connect an MCP client to a running server over a real socket, carrying the test token.
  *
  * @param {string} url
+ * @param {{ token?: string }} [options]
  */
-async function connect(url) {
+async function connect(url, { token = TEST_TOKEN } = {}) {
   const client = new Client({ name: "http-test-client", version: "0.0.0" });
-  await client.connect(new StreamableHTTPClientTransport(new URL(`${url}/mcp`)));
+  await client.connect(
+    new StreamableHTTPClientTransport(new URL(`${url}/mcp`), {
+      requestInit: { headers: bearer(token) },
+    })
+  );
   return client;
 }
 
@@ -392,7 +412,7 @@ test("the server's own source and manifest are unreachable over HTTP", async () 
 
 test("an unknown route says what this server does not serve", async () => {
   await withServer({}, async ({ url }) => {
-    const response = await fetch(`${url}/nope`);
+    const response = await fetch(`${url}/nope`, { headers: bearer() });
     const body = await response.json();
 
     assert.equal(response.status, 404);
@@ -402,7 +422,7 @@ test("an unknown route says what this server does not serve", async () => {
 
 test("GET /mcp is refused rather than served", async () => {
   await withServer({}, async ({ url }) => {
-    const response = await fetch(`${url}/mcp`);
+    const response = await fetch(`${url}/mcp`, { headers: bearer() });
 
     assert.equal(response.status, 405);
     assert.match((await response.json()).error.message, /stateless mode/);
@@ -603,7 +623,7 @@ test("a body over the limit is refused, and says so in the JSON-RPC envelope", a
 
     const response = await fetch(`${url}/mcp`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", ...bearer() },
       body: oversized,
     });
     const body = await response.json();
@@ -622,7 +642,7 @@ test("malformed JSON is refused with exactly the same answer as a body that is t
   await withServer({}, async ({ url }) => {
     const response = await fetch(`${url}/mcp`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", ...bearer() },
       body: "{ this is not json",
     });
     const body = await response.json();
@@ -640,10 +660,14 @@ test("no response advertises that the server is running express", async () => {
     // path through the stack. `X-Powered-By` hands an unauthenticated caller the
     // framework and its version, which is a free upgrade suggestion.
     const health = await fetch(`${url}/healthz`);
-    const missing = await fetch(`${url}/nope`);
-    const refused = await fetch(`${url}/mcp`);
+    const missing = await fetch(`${url}/nope`, { headers: bearer() });
+    const refused = await fetch(`${url}/mcp`, { headers: bearer() });
+    // And on the 401, which is produced by this repository's own middleware rather than
+    // by a route, so it is the answer most likely to have been built without going
+    // through `app`.
+    const unauthorized = await fetch(`${url}/mcp`);
 
-    for (const response of [health, missing, refused]) {
+    for (const response of [health, missing, refused, unauthorized]) {
       assert.equal(
         response.headers.get("x-powered-by"),
         null,
@@ -853,7 +877,11 @@ test("stdio forks nothing, because a worker's stdout would corrupt the stream", 
     command: process.execPath,
     args: ["src/index.js"],
     cwd: ROOT,
-    env: { ...process.env, MCP_TRANSPORT: "stdio" },
+    // No token, deliberately: the token belongs to the HTTP transport, and a local
+    // process that is spawned by its own client has nobody to authenticate. Blanked
+    // rather than omitted so a token in the developer's shell cannot make this pass for
+    // the wrong reason.
+    env: { ...process.env, MCP_TRANSPORT: "stdio", MCP_AUTH_TOKEN: "" },
     stderr: "pipe",
   });
 
@@ -933,3 +961,305 @@ test(
     });
   }
 );
+
+/* -------------------------------------------------------------------------- *
+ * Authentication.
+ *
+ * The transport decides: HTTP needs the bearer token, stdio never does. Every test above
+ * runs against a server that was handed `TEST_TOKEN`, so none of them is about this -
+ * these are.
+ * -------------------------------------------------------------------------- */
+
+/** A JSON-RPC `tools/list`, with the headers the Streamable HTTP transport insists on. */
+const LIST_TOOLS = {
+  method: "POST",
+  headers: { "content-type": "application/json", accept: "application/json, text/event-stream" },
+  body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+};
+
+/** `LIST_TOOLS` with an extra header merged in. */
+const withHeaders = (extra) => ({ ...LIST_TOOLS, headers: { ...LIST_TOOLS.headers, ...extra } });
+
+/**
+ * Start a process that is expected to stop, and report how it stopped.
+ *
+ * `startServer` waits for a startup line and treats an early exit as a failure to come up,
+ * which is exactly what these tests assert should happen - so they need the exit, not the
+ * failure.
+ *
+ * @param {{ env?: Record<string, string> }} [options]
+ * @returns {Promise<{ code: number | string | null, output: string }>}
+ */
+async function runToExit({ env = {} } = {}) {
+  const port = await freePort();
+  const child = spawn(process.execPath, ["src/index.js"], {
+    cwd: ROOT,
+    stdio: ["ignore", "pipe", "pipe"],
+    env: { ...process.env, MCP_TRANSPORT: "http", PORT: String(port), HOST: "127.0.0.1", ...env },
+  });
+  openServers.add(child);
+
+  let output = "";
+  child.stdout.on("data", (chunk) => (output += chunk));
+  child.stderr.on("data", (chunk) => (output += chunk));
+
+  return new Promise((resolveRun) => {
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      resolveRun({ code: "still running", output });
+    }, 15_000);
+    child.once("exit", (code) => {
+      clearTimeout(timer);
+      openServers.delete(child);
+      resolveRun({ code, output });
+    });
+  });
+}
+
+test("a request with no token is refused with a 401 the client can read", async () => {
+  await withServer({}, async ({ url }) => {
+    const response = await fetch(`${url}/mcp`, LIST_TOOLS);
+    const body = await response.json();
+
+    assert.equal(response.status, 401);
+    assert.equal(response.headers.get("www-authenticate"), 'Bearer realm="mcp"');
+    assert.equal(body.jsonrpc, "2.0");
+    assert.equal(body.id, null);
+    assert.equal(body.error.code, -32001);
+    assert.match(body.error.message, /send the token as Authorization: Bearer/);
+  });
+});
+
+test("a wrong token is refused, whatever its length, and never with a 500", async () => {
+  await withServer({}, async ({ url }) => {
+    const wrong = [
+      TEST_TOKEN.slice(0, -1) + (TEST_TOKEN.endsWith("f") ? "e" : "f"), // one character off
+      TEST_TOKEN.slice(0, -1), // a prefix of the real one
+      TEST_TOKEN + "0", // the real one with something after it
+      TEST_TOKEN.toUpperCase(),
+      "x",
+      "x".repeat(10_000),
+    ];
+
+    for (const token of wrong) {
+      const response = await fetch(`${url}/mcp`, withHeaders(bearer(token)));
+      const body = await response.json();
+
+      assert.equal(response.status, 401, `a ${token.length}-character token must be refused`);
+      assert.equal(
+        response.headers.get("www-authenticate"),
+        'Bearer realm="mcp", error="invalid_token"'
+      );
+      assert.match(body.error.message, /the token is not valid/);
+    }
+  });
+});
+
+test("only a bearer credential counts, and the scheme is case-insensitive", async () => {
+  await withServer({}, async ({ url }) => {
+    const refused = [
+      `Basic ${TEST_TOKEN}`,
+      "Bearer",
+      "Bearer ",
+      `Bearer ${TEST_TOKEN} ${TEST_TOKEN}`,
+      TEST_TOKEN,
+    ];
+    for (const authorization of refused) {
+      const response = await fetch(`${url}/mcp`, withHeaders({ authorization }));
+      assert.equal(response.status, 401, `"${authorization.slice(0, 12)}..." must be refused`);
+    }
+
+    const accepted = await fetch(`${url}/mcp`, withHeaders({ authorization: `bearer ${TEST_TOKEN}` }));
+    assert.equal(accepted.status, 200, "RFC 7235 says the scheme is case-insensitive");
+  });
+});
+
+test("the right token is served", async () => {
+  await withServer({}, async ({ url }) => {
+    const response = await fetch(`${url}/mcp`, withHeaders(bearer()));
+
+    assert.equal(response.status, 200);
+    assert.match(await response.text(), /python_flask_web_server_security/);
+  });
+});
+
+test("an unauthenticated caller learns nothing about which routes exist", async () => {
+  // A 404 and a 405 are answers about routes. Given to a caller without the token they
+  // would map the server for free, so every guarded route answers the same 401.
+  await withServer({}, async ({ url }) => {
+    const probes = [
+      ["GET", "/mcp"],
+      ["DELETE", "/mcp"],
+      ["POST", "/nope"],
+      ["GET", "/sse"],
+      ["POST", "/message"],
+    ];
+
+    for (const [method, path] of probes) {
+      const response = await fetch(`${url}${path}`, { method });
+      assert.equal(response.status, 401, `${method} ${path} must be refused, not routed`);
+    }
+  });
+});
+
+test("the token is checked before the body is read", async () => {
+  // A malformed body is a 400 once it is parsed. Without the token it is never parsed, so
+  // the answer is 401 - an unauthenticated caller cannot make this server read and parse a
+  // body.
+  await withServer({}, async ({ url }) => {
+    const response = await fetch(`${url}/mcp`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{ this is not json",
+    });
+
+    assert.equal(response.status, 401);
+  });
+});
+
+test("only GET /healthz is open, and the exemption is exact", async () => {
+  await withServer({}, async ({ url }) => {
+    assert.equal((await fetch(`${url}/healthz`)).status, 200, "the probe needs no token");
+    assert.equal(
+      (await fetch(`${url}/healthz`, { headers: bearer("wrong") })).status,
+      200,
+      "and a wrong token on it is not an error"
+    );
+
+    // Nothing that merely resembles the route inherits the exemption.
+    assert.equal((await fetch(`${url}/healthz`, { method: "POST" })).status, 401);
+    assert.equal((await fetch(`${url}/healthz`, { method: "HEAD" })).status, 401);
+    assert.equal((await fetch(`${url}/healthz/x`)).status, 401);
+    assert.equal((await fetch(`${url}/healthzz`)).status, 401);
+  });
+});
+
+test("the allow-list still runs before the token check", async () => {
+  // A disallowed Host is refused as a Host problem, not answered with a 401 that invites
+  // the caller to try a token against a name this server was told not to answer to.
+  await withServer({ env: { MCP_ALLOWED_HOSTS: "security.example.test" } }, async ({ url }) => {
+    assert.equal((await requestWithHost({ url, host: "evil.test", path: "/mcp" })).status, 403);
+  });
+});
+
+test("the startup line says a token is required, and no log line ever carries one", async () => {
+  await withServer({}, async ({ url, output }) => {
+    assert.match(output(), /bearer token required on every route except GET \/healthz/);
+
+    const attempt = "wrong-token-that-must-not-be-logged-0123456789";
+    await fetch(`${url}/mcp`, withHeaders(bearer(attempt)));
+    await fetch(`${url}/mcp`, withHeaders(bearer()));
+
+    assert.ok(!output().includes(TEST_TOKEN), "the real token must not be logged");
+    assert.ok(!output().includes(attempt), "a rejected token must not be logged");
+  });
+});
+
+test("a token with a trailing newline, as an env file leaves it, still matches", async () => {
+  await withServer({ env: { MCP_AUTH_TOKEN: `${TEST_TOKEN}\n` } }, async ({ url }) => {
+    const client = await connect(url);
+    try {
+      assert.equal((await client.listTools()).tools.length, listTools().length);
+    } finally {
+      await client.close();
+    }
+  });
+});
+
+test("a token of exactly the minimum length is accepted", async () => {
+  const token = "k".repeat(MIN_TOKEN_LENGTH);
+
+  await withServer({ env: { MCP_AUTH_TOKEN: token } }, async ({ url }) => {
+    assert.equal((await fetch(`${url}/mcp`, withHeaders(bearer(token)))).status, 200);
+  });
+});
+
+test("HTTP refuses to start without a usable token", async () => {
+  const cases = [
+    ["unset", "", /MCP_AUTH_TOKEN is not set/],
+    ["only whitespace", "  \n ", /MCP_AUTH_TOKEN is not set/],
+    ["too short", "short-secret", /MCP_AUTH_TOKEN is 12 characters, and it must be at least 32/],
+    [
+      "one character short",
+      "k".repeat(MIN_TOKEN_LENGTH - 1),
+      new RegExp(`is ${MIN_TOKEN_LENGTH - 1} characters`),
+    ],
+  ];
+
+  for (const [name, token, message] of cases) {
+    const { code, output } = await runToExit({ env: { MCP_AUTH_TOKEN: token } });
+
+    assert.equal(code, 1, `${name}: it must exit 1, got ${code}\n${output}`);
+    assert.match(output, message, name);
+    assert.match(output, /openssl rand -hex 32/, `${name}: the message must say how to fix it`);
+    assert.doesNotMatch(output, /serving over http/, `${name}: it must not have bound the port`);
+    if (token.trim()) assert.ok(!output.includes(token), `${name}: the value must not be echoed`);
+  }
+});
+
+test("the refusal to start is printed once however many workers, and is not a respawn loop", async () => {
+  for (const workers of ["1", "3"]) {
+    const { code, output } = await runToExit({
+      env: { MCP_AUTH_TOKEN: "", MCP_CLUSTER_WORKERS: workers },
+    });
+
+    assert.equal(code, 1, output);
+    assert.equal(output.split("will not start the HTTP transport").length - 1, 1, output);
+    assert.doesNotMatch(output, /forking \d+ HTTP workers/);
+    assert.doesNotMatch(output, /worker \d+ exited/, "a missing token must not become a respawn loop");
+  }
+});
+
+test("createApp cannot be built without a usable token", () => {
+  const saved = process.env.MCP_AUTH_TOKEN;
+  try {
+    delete process.env.MCP_AUTH_TOKEN;
+    assert.throws(() => createApp(), /Refusing to build the HTTP app: MCP_AUTH_TOKEN is not set/);
+    assert.throws(() => createApp({ token: "short" }), /must be at least 32/);
+    assert.throws(() => createApp({ token: "" }), /is not set/);
+
+    process.env.MCP_AUTH_TOKEN = TEST_TOKEN;
+    assert.equal(typeof createApp().listen, "function", "the environment supplies the default");
+    assert.equal(typeof createApp({ token: "z".repeat(40) }).listen, "function");
+  } finally {
+    if (saved === undefined) delete process.env.MCP_AUTH_TOKEN;
+    else process.env.MCP_AUTH_TOKEN = saved;
+  }
+});
+
+test("tokenProblem and configuredToken", () => {
+  assert.equal(tokenProblem(""), "MCP_AUTH_TOKEN is not set");
+  assert.match(tokenProblem("k".repeat(31)), /is 31 characters, and it must be at least 32/);
+  assert.equal(tokenProblem("k".repeat(32)), null);
+  assert.equal(tokenProblem(TEST_TOKEN), null);
+
+  const saved = process.env.MCP_AUTH_TOKEN;
+  try {
+    process.env.MCP_AUTH_TOKEN = `  ${TEST_TOKEN}\r\n`;
+    assert.equal(configuredToken(), TEST_TOKEN);
+    delete process.env.MCP_AUTH_TOKEN;
+    assert.equal(configuredToken(), "");
+  } finally {
+    if (saved === undefined) delete process.env.MCP_AUTH_TOKEN;
+    else process.env.MCP_AUTH_TOKEN = saved;
+  }
+});
+
+test("stdio never reads the token, so even an unusable one does not stop it", async () => {
+  const client = new Client({ name: "stdio-token-test", version: "0.0.0" });
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: ["src/index.js"],
+    cwd: ROOT,
+    // Too short to start HTTP with. If stdio read the variable at all, this would fail it.
+    env: { ...process.env, MCP_TRANSPORT: "stdio", MCP_AUTH_TOKEN: "x" },
+    stderr: "pipe",
+  });
+
+  try {
+    await client.connect(transport);
+    assert.equal((await client.listTools()).tools.length, listTools().length);
+  } finally {
+    await client.close();
+  }
+});

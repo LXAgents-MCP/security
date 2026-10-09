@@ -293,7 +293,9 @@ test("no tool accepts a credential", async () => {
   });
 });
 
-test("the server reads no credential and needs no key to answer", async () => {
+// The tool surface only. The HTTP transport reads one credential, MCP_AUTH_TOKEN, and that is
+// covered in test/http.test.js; nothing a tool does depends on it.
+test("the tool surface reads no credential and needs no key to answer", async () => {
   delete process.env.API_KEY;
 
   await withClient(async ({ client }) => {
